@@ -1,0 +1,9 @@
+dist/
+.work/
+*.user
+.venv/
+__pycache__/
+*.pyc
+*.log
+本地文件转换器.exe
+文件万能处理器.exe

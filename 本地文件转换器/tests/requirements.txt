@@ -1,0 +1,4 @@
+# 仅开发验收使用；发行版不依赖 Python。
+Pillow==13.0.0
+python-docx==1.2.0
+pypdf==6.21.4
