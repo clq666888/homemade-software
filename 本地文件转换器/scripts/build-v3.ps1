@@ -5,6 +5,10 @@ Set-Location -LiteralPath $project
 $stage = Join-Path $project '.work\release'
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 & (Join-Path $PSScriptRoot 'make-icon.ps1')
+& (Join-Path $PSScriptRoot 'prepare-audio.ps1')
+if(!$?){throw 'Audio runtime preparation failed'}
+& '.\.venv\Scripts\python.exe' scripts/prepare-image.py
+if($LASTEXITCODE -ne 0){throw 'Image runtime preparation failed'}
 if ($GuiOnly -and !(Test-Path -LiteralPath (Join-Path $stage 'engine\PdfEngine.exe'))) {
     $published=Join-Path $project 'dist\文件万能处理器'
     if(!(Test-Path -LiteralPath (Join-Path $published 'engine\PdfEngine.exe'))){$published=Join-Path $project 'dist\本地文件转换器'}

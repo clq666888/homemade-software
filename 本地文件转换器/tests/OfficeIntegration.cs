@@ -15,7 +15,7 @@ static class OfficeIntegration
     [DllImport("user32.dll")]static extern bool SetProcessDPIAware();
     static int count;static void Check(bool value,string message){if(!value)throw new Exception(message);count++;Console.WriteLine("PASS "+message);}
     static T Field<T>(MainForm f,string name){return (T)typeof(MainForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(f);}
-    static object Call(MainForm f,string name,params object[] args){return typeof(MainForm).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(f,args);}
+    static object Call(MainForm f,string name,params object[] args){SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());var value=typeof(MainForm).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(f,args);if(name=="AddFiles"){var task=Field<Task>(f,"admissionTask");while(!task.IsCompleted){Application.DoEvents();Thread.Sleep(5);}task.GetAwaiter().GetResult();}return value;}
     static ResultSession Run(MainForm f){var task=(Task)Call(f,"ProcessFiles");while(!task.IsCompleted){Application.DoEvents();Thread.Sleep(15);}task.GetAwaiter().GetResult();var result=(ResultSession)typeof(MainForm).GetProperty("results",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(f,null);Check(result!=null&&result.Files.Length>0,"UI conversion produces downloadable result");result.Downloaded=true;return result;}
     [STAThread]static int Main(string[] args)
     {

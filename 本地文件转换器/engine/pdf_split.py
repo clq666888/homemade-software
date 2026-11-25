@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 from pypdf import PdfWriter
 from pypdf.generic import RectangleObject
+from pdf_access import password_for
 
 
 def page_range(value, count):
@@ -39,6 +40,7 @@ def execute_split(job, read_pdf, progress, atomic_path):
     # Validate every input before opening the final archive. A bad batch yields no partial download.
     plans=[];total=0
     for source in files:
+        password=password_for(job,source)
         reader=read_pdf(source,password);count=len(reader.pages)
         if count==0: raise ValueError(f'{Path(source).name} 没有可拆分页面。')
         if method=='ranges':
@@ -50,6 +52,7 @@ def execute_split(job, read_pdf, progress, atomic_path):
     if method=='ratio':
         outputs=[];done=0
         for number,(source,count,_) in enumerate(plans):
+            password=password_for(job,source)
             reader=read_pdf(source,password);writer=PdfWriter()
             try:
                 writer.append(reader)
@@ -73,6 +76,7 @@ def execute_split(job, read_pdf, progress, atomic_path):
         with tempfile.TemporaryDirectory(prefix='split-',dir=Path(job['reply']).parent) as work:
             with zipfile.ZipFile(archive_path,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True) as archive:
                 for number,(source,count,groups) in enumerate(plans):
+                    password=password_for(job,source)
                     reader=read_pdf(source,password)
                     prefix=f'{number+1:03d}_{Path(source).stem}'
                     if groups is None: groups=[[i] for i in range(count)]

@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "package": "Xiragi/FFmpeg-Audio-Builds audio-only LGPL shared (2026-11-01)",
+  "url": "https://github.com/Xiragi/FFmpeg-Audio-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-audio-shared.zip",
+  "archiveSha256": "9a149c4033c975aab07c1f3d4d6f98f0d2742fa889a61facd8b20abbeb868f6a",
+  "denoiseSourceUrl": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+  "denoiseSourceSha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+  "denoiseBuild": "scripts/build-audio-denoise.sh, MinGW-w64 GCC 8.1.0, audio filters + PCM/WMA only",
+  "files": [
+    {
+      "name": "AudioDenoise.exe",
+      "sha256": "aa970a5d786a98aba2078795b316ad4f2be7509bb02edf32b42cccb6cb4a583f",
+      "bytes": 1419264
+    },
+    {
+      "name": "avcodec-63.dll",
+      "sha256": "162af8361d8c00770cccea63000fb7d25ce6f30c8caabeb34ad321807d01539a",
+      "bytes": 4571648
+    },
+    {
+      "name": "avdevice-63.dll",
+      "sha256": "9f5dddf8d83f354b246e1db73c8d0106d72c1a9edac0859f9a344b2383ea004e",
+      "bytes": 18432
+    },
+    {
+      "name": "avfilter-12.dll",
+      "sha256": "b559a3593865d512125689c78b9740f6b00015fc41b4045e8fd12ff93472593b",
+      "bytes": 451072
+    },
+    {
+      "name": "avformat-63.dll",
+      "sha256": "cda49013e00e6aff7faf3668c6dae1f50c37029e80954ffd6ee7c1b696286377",
+      "bytes": 2840064
+    },
+    {
+      "name": "avutil-61.dll",
+      "sha256": "04558d90a9e259fdbb3c54f2835d6249a3bbf20977a85a6a79e6fb83ed564241",
+      "bytes": 738304
+    },
+    {
+      "name": "ffmpeg.exe",
+      "sha256": "eae4657d38970e8dc2c3f9ffb29cdddc21175f7e438ffbc50eae398fec0a09c2",
+      "bytes": 477184
+    },
+    {
+      "name": "ffprobe.exe",
+      "sha256": "b09b5c3537f30c95973c728cbf5102f794a8ef7f995dd6610a4953f717e9ab81",
+      "bytes": 202240
+    },
+    {
+      "name": "LICENSE-AudioDenoise.txt",
+      "sha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+      "bytes": 26517
+    },
+    {
+      "name": "LICENSE-FFmpeg-Audio.txt",
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+      "bytes": 7651
+    },
+    {
+      "name": "swresample-7.dll",
+      "sha256": "20dfef7fe8ae3367c93b98993912677dabf166d1510efadcdaf67977536f6d49",
+      "bytes": 656896
+    },
+    {
+      "name": "swscale-10.dll",
+      "sha256": "27513f259115fba3f564427f6df400076b9236dc431f0769e9e02fcdfddde625",
+      "bytes": 1013248
+    }
+  ]
+}

@@ -13,6 +13,7 @@ namespace LocalConverter
         public string Path;
         public int Count;
         public bool Cached;
+        public float Width,Height;
     }
     public sealed class PreviewRenderer : IDisposable
     {
@@ -47,7 +48,7 @@ namespace LocalConverter
                     }
                     token.ThrowIfCancellationRequested();if(reply.Result==null){Stop();throw new IOException("预览进程已退出，请重试。");}
                     var result=json.Deserialize<Dictionary<string,object>>(reply.Result);if(!(bool)result["ok"])throw new IOException((string)result["error"]);
-                    return new PreviewPage{Path=(string)result["path"],Count=System.Convert.ToInt32(result["count"]),Cached=(bool)result["cached"]};
+                    return new PreviewPage{Path=(string)result["path"],Count=System.Convert.ToInt32(result["count"]),Cached=(bool)result["cached"],Width=result.ContainsKey("width")?System.Convert.ToSingle(result["width"]):0,Height=result.ContainsKey("height")?System.Convert.ToSingle(result["height"]):0};
                 }
                 catch(OperationCanceledException){throw;}
                 catch(IOException){throw;}

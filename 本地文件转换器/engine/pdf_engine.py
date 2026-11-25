@@ -12,6 +12,8 @@ import uuid
 from xml.sax.saxutils import escape
 from pdf_split import execute_split
 from office_formats import export_pdf, preview as office_preview, prepare_html
+from pdf_watermark import plan as watermark_plan, execute as watermark_execute
+from pdf_access import password_for, probe
 
 def atomic_path(dest, action):
     temporary=dest.with_name('.working-'+uuid.uuid4().hex+'.tmp')
@@ -113,11 +115,17 @@ def doc_text(path):
 
 
 def run(job):
+    if job.get('action','').startswith('image_'):
+        from image_tools import execute
+        return execute(job,progress,atomic_path)
     if job['action']=='prepare_html':return {'outputs':[prepare_html(job['files'][0],job['folder'])]}
     if job['action']=='office_text':return {'text':office_preview(job['files'][0])}
     action = job['action']; files = job.get('files', []); password = job.get('password', '')
+    if action == 'probe':return probe(files[0],password_for(job,files[0]))
+    if files:password=password_for(job,files[0])
     if action == 'doc_text':
         return {'text': doc_text(files[0])}
+    if action == 'watermark_info':return watermark_plan(job,read_pdf)
     if action == 'inspect':
         reader = read_pdf(files[0], password)
         return {'count': len(reader.pages), 'encrypted': reader.is_encrypted,
@@ -136,13 +144,14 @@ def run(job):
             return {'outputs': outputs}
     folder = Path(job['folder']); folder.mkdir(parents=True, exist_ok=True)
     outputs = []; notes = []
+    if action=='watermark':return watermark_execute(job,read_pdf,progress,write_pdf)
     if action=='split':return execute_split(job,read_pdf,progress,atomic_path)
     if action == 'merge':
         if len(files) < 2: raise ValueError('请至少添加两份文件。')
         writer = PdfWriter()
         try:
             for i, source in enumerate(files):
-                reader = read_pdf(source, password)
+                reader = read_pdf(source, password_for(job,source))
                 if reader.get_fields(): reader.add_form_topname(f'document{i+1}')
                 writer.append(reader)
                 progress(job, int(90*(i+1)/len(files)), f'正在合并第 {i+1} 份文件')
@@ -163,13 +172,13 @@ def run(job):
             if reader.metadata: writer.add_metadata({k:str(v) for k,v in reader.metadata.items() if v is not None})
             # Editing an encrypted input retains its original password unless explicitly decrypting.
             if reader.is_encrypted:
-                if not password: raise ValueError('编辑加密文件需要非空密码。')
                 writer.encrypt(password, algorithm='AES-256-R5')
             dest = folder / (Path(files[0]).stem + '_编辑.pdf'); write_pdf(writer,dest); outputs.append(str(dest))
         finally: writer.close()
     elif action == 'convert' and job.get('format') in ('png', 'jpg', 'txt', 'docx','xlsx','pptx','html'):
         fmt = job['format']
         for number, source in enumerate(files):
+            password=password_for(job,source)
             reader = read_pdf(source, password)
             if fmt in ('xlsx','pptx','html'):
                 dest=folder/f'{number+1}_{Path(source).stem}.{fmt}'
@@ -194,6 +203,7 @@ def run(job):
                         progress(job, int(95*(number+(index+1)/len(document))/len(files)), f'正在导出第 {index+1} 页')
     else:
         for number, source in enumerate(files):
+            password=password_for(job,source)
             reader = read_pdf(source, password); writer = PdfWriter(clone_from=reader)
             try:
                 suffix = action
@@ -219,7 +229,6 @@ def run(job):
                         progress(job, int(90*(number+(i+1)/len(writer.pages))/len(files)), f'正在压缩第 {i+1} 页')
                     writer.compress_identical_objects(remove_duplicates=True, remove_unreferenced=True); suffix = '压缩'
                     if reader.is_encrypted:
-                        if not password: raise ValueError('压缩加密 PDF 需要非空密码。')
                         writer.encrypt(password, algorithm='AES-256-R5')
                 else: raise ValueError('不支持的 PDF 操作。')
                 dest = folder / f'{number+1}_{Path(source).stem}_{suffix}.pdf'; write_pdf(writer,dest)

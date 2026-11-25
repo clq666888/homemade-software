@@ -14,7 +14,11 @@ namespace LocalConverter
         readonly PdfEngine engine=new PdfEngine();
         readonly PreviewRenderer previewRenderer=new PreviewRenderer();
         readonly Settings settings=Settings.Load();
-        readonly string[] operations={"转换","页面编辑","合并","拆分","加密","移除加密","压缩"};
+        readonly PdfAccessStore pdfAccess=new PdfAccessStore();
+        AudioWorkspace audioWorkspace;ImageWorkspace imageWorkspace;Control pdfWorkspace;ModernButton pdfSection,audioSection,imageSection;
+        readonly LinkLabel engineDownloadsLink=new LinkLabel{Dock=DockStyle.Bottom,Height=42,Text="引擎下载任务",LinkColor=Color.FromArgb(163,193,245),ActiveLinkColor=Color.White,VisitedLinkColor=Color.FromArgb(163,193,245),Visible=false,Font=new Font("Microsoft YaHei UI",9)};
+        readonly System.Windows.Forms.Timer engineDownloadsTimer=new System.Windows.Forms.Timer{Interval=400};
+        readonly string[] operations={"转换","页面编辑","合并","拆分","水印","加密","移除加密","压缩"};
         readonly Dictionary<string,FunctionTab> tabs=new Dictionary<string,FunctionTab>();
         readonly List<Control> controls=new List<Control>();
         string mode="转换",previewSource="";
@@ -34,23 +38,26 @@ namespace LocalConverter
         CheckBox merge,overwrite;
         ComboBox format,quality,htmlMode,previewPart;
         SplitSettings splitSettings;
+        WatermarkSettings watermarkSettings;
         bool layingOutOptions,optionsLayoutPending;
         Control rotateDivider;
         Label splitOutputHint;
         string ActionText{get{return mode=="页面编辑"?"生成编辑结果":mode=="拆分"&&splitSettings.Method.SelectedIndex==2?"开始裁剪":"开始"+mode;}}
-        TextBox password,newPassword;
+        TextBox newPassword;
         readonly ToolResultStore toolResults=new ToolResultStore();
         ResultSession results { get { return toolResults.Get(mode); } set { toolResults.Set(mode,value,ResultContext()); } }
         CancellationTokenSource running,previewCancel,thumbCancel,loadCancel;
         Task previewTask=Task.FromResult(0),thumbTask=Task.FromResult(0);
+        Task admissionTask=Task.FromResult(0);
         bool changing,loading,closeReady,closing,closeAfterTask;
         float uiScale=1;
         public MainForm(string[] args)
         {
             Text="文件万能处理器 · PDF 处理";Font=new Font("Microsoft YaHei UI",10F);ForeColor=Theme.Ink;BackColor=Theme.Background;
             Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1320,840);MinimumSize=new Size(1100,760);StartPosition=FormStartPosition.CenterScreen;
-            Build();using(var g=CreateGraphics())uiScale=g.DpiX/96F;if(Math.Abs(uiScale-1)>0.01)Scale(new SizeF(uiScale,uiScale));SetMode("转换");if(args.Length>0)AddFiles(args);
-            FormClosing+=ClosingForm;FormClosed+=(s,e)=>{if(pagePicture.Image!=null)pagePicture.Image.Dispose();toolResults.Dispose();previewRenderer.Dispose();engine.Dispose();};
+            Build();using(var g=CreateGraphics())uiScale=g.DpiX/96F;if(Math.Abs(uiScale-1)>0.01)Scale(new SizeF(uiScale,uiScale));SetMode("转换");if(args.Length>0)Shown+=(s,e)=>AddFiles(args);
+            engineDownloadsLink.LinkClicked+=(s,e)=>audioWorkspace.ShowDownloads();engineDownloadsTimer.Tick+=(s,e)=>{var tasks=audioWorkspace.BackgroundDownloads.Snapshots;engineDownloadsLink.Visible=tasks.Length>0;int active=tasks.Count(t=>t.Active);engineDownloadsLink.Text=active>0?"引擎下载（"+active+"项）":tasks.Any(t=>t.State==EngineTaskState.Failed||t.State==EngineTaskState.Cancelled)?"引擎下载 · 查看任务":"引擎资源 · 已完成";};engineDownloadsTimer.Start();Disposed+=(s,e)=>engineDownloadsTimer.Dispose();
+            FormClosing+=ClosingForm;FormClosed+=(s,e)=>{engineDownloadsTimer.Stop();if(pagePicture.Image!=null)pagePicture.Image.Dispose();pdfAccess.Dispose();toolResults.Dispose();previewRenderer.Dispose();engine.Dispose();};
         }
         Label Label(string text,float size,Color color){return new Label{Text=text,Font=new Font(Font.FontFamily,size),ForeColor=color,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
         ModernButton Button(string text,int width,EventHandler click,bool primary=false){var b=new ModernButton{Text=text,Width=(int)(width*uiScale),Height=(int)(40*uiScale),Primary=primary,Font=Font};b.Click+=click;return b;}
@@ -61,11 +68,15 @@ namespace LocalConverter
             var root=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,184));root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));Controls.Add(root);
             root.RowStyles.Add(new RowStyle(SizeType.Percent,100));
             var side=new TableLayoutPanel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(24,40,67),Padding=new Padding(20,30,20,22),Margin=Padding.Empty,ColumnCount=1,RowCount=5};
-            side.RowStyles.Add(new RowStyle(SizeType.Absolute,60));side.RowStyles.Add(new RowStyle(SizeType.Absolute,35));side.RowStyles.Add(new RowStyle(SizeType.Absolute,46));side.RowStyles.Add(new RowStyle(SizeType.Percent,100));side.RowStyles.Add(new RowStyle(SizeType.Absolute,85));root.Controls.Add(side,0,0);
-            side.Controls.Add(Label("文件万能\r\n处理器",17,Color.White),0,0);side.Controls.Add(Label("工作空间",9,Color.FromArgb(144,166,198)),0,1);
-            var pdf=Button("▤  PDF 处理",140,(s,e)=>{},true);pdf.Dock=DockStyle.Fill;side.Controls.Add(pdf,0,2);
-            side.Controls.Add(Label("更多文件工具\r\n将在后续版本加入",9,Color.FromArgb(144,166,198)),0,3);side.Controls.Add(Label("离线处理 · 文件不上传\r\nv0.4.3",8.5F,Color.FromArgb(155,180,211)),0,4);
-            var main=new TableLayoutPanel{Dock=DockStyle.Fill,Margin=Padding.Empty,Padding=new Padding(26,20,26,18),ColumnCount=1,RowCount=4};root.Controls.Add(main,1,0);
+            side.RowStyles.Add(new RowStyle(SizeType.Absolute,60));side.RowStyles.Add(new RowStyle(SizeType.Absolute,35));side.RowStyles.Add(new RowStyle(SizeType.Absolute,174));side.RowStyles.Add(new RowStyle(SizeType.Percent,100));side.RowStyles.Add(new RowStyle(SizeType.Absolute,85));root.Controls.Add(side,0,0);
+            side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));var brand=Label("文件万能\r\n处理器",17,Color.White);brand.Name="AppBrand";brand.TextAlign=ContentAlignment.MiddleCenter;side.Controls.Add(brand,0,0);side.Controls.Add(Label("工作空间",9,Color.FromArgb(144,166,198)),0,1);
+            var navigation=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));side.Controls.Add(navigation,0,2);
+            pdfSection=Button("▤  PDF 处理",140,(s,e)=>SwitchWorkspace(false),true);audioSection=Button("♫  音频处理",140,(s,e)=>SwitchWorkspace(true));imageSection=Button("▧  图片处理",140,(s,e)=>ChangeWorkspace(2));
+            int sectionRow=0;foreach(var section in new[]{pdfSection,audioSection,imageSection}){navigation.RowStyles.Add(new RowStyle(SizeType.Percent,100F/3));section.Dock=DockStyle.Fill;section.Margin=new Padding(0,0,0,12);section.Appearance=ButtonAppearance.Sidebar;navigation.Controls.Add(section,0,sectionRow++);}
+            var sideInfo=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0,28,0,0)};sideInfo.Controls.Add(new Label{Text="更多文件工具\r\n将在后续版本加入",Dock=DockStyle.Top,Height=60,ForeColor=Color.FromArgb(144,166,198),Font=new Font(Font.FontFamily,9)});sideInfo.Controls.Add(engineDownloadsLink);side.Controls.Add(sideInfo,0,3);side.Controls.Add(Label("离线处理 · 文件不上传\r\nv"+typeof(MainForm).Assembly.GetName().Version.ToString(3),8.5F,Color.FromArgb(155,180,211)),0,4);
+            var workspaceHost=new Panel{Dock=DockStyle.Fill,Margin=Padding.Empty};root.Controls.Add(workspaceHost,1,0);
+            var main=new TableLayoutPanel{Dock=DockStyle.Fill,Margin=Padding.Empty,Padding=new Padding(26,20,26,18),ColumnCount=1,RowCount=4};workspaceHost.Controls.Add(main);pdfWorkspace=main;
+            audioWorkspace=new AudioWorkspace{Visible=false};workspaceHost.Controls.Add(audioWorkspace);imageWorkspace=new ImageWorkspace{Visible=false};workspaceHost.Controls.Add(imageWorkspace);audioWorkspace.BusyChanged+=RefreshSections;imageWorkspace.BusyChanged+=RefreshSections;
             side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
             foreach(int h in new[]{85,55,0,150})main.RowStyles.Add(new RowStyle(h==0?SizeType.Percent:SizeType.Absolute,h==0?100:h));
             var header=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};header.RowStyles.Add(new RowStyle(SizeType.Absolute,49));header.RowStyles.Add(new RowStyle(SizeType.Percent,100));heading=Label("PDF 处理",25,Theme.Ink);subtitle=Label("",9.5F,Theme.Muted);header.Controls.Add(heading,0,0);header.Controls.Add(subtitle,0,1);main.Controls.Add(header,0,0);
@@ -94,9 +105,9 @@ namespace LocalConverter
             htmlMode=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,AccessibleName="HTML 输出方式"};htmlMode.Items.AddRange(new object[]{"保留页面外观（图片）","可编辑正文（文字）"});htmlMode.SelectedIndex=0;htmlMode.SelectedIndexChanged+=(s,e)=>RefreshOutcome(false);
             quality=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,Width=220,AccessibleName="压缩方式"};quality.Items.AddRange(new object[]{"无损压缩（保留画质）","均衡压缩（降低图片质量）","优先小体积（图片更模糊）"});quality.SelectedIndex=0;
             splitSettings=new SplitSettings{Font=Font};splitSettings.SettingsChanged+=()=>{LayoutOptions();RefreshOutcome(false);UpdateCutPreview();};
+            watermarkSettings=new WatermarkSettings{Font=Font};watermarkSettings.SettingsChanged+=()=>{if(changing)return;LayoutOptions();RefreshOutcome(false);UpdateWatermarkPreview();};
             merge=new CheckBox{Text="合并多个文件为一份 PDF",AutoSize=true,Checked=true,ForeColor=Theme.Ink,Margin=new Padding(4,6,12,8)};
             overwrite=new CheckBox{Text="直接修改原文件（自动备份原件）",AutoSize=true,Margin=new Padding(4,6,12,8)};
-            password=new TextBox{Width=175,UseSystemPasswordChar=true,AccessibleName="原文件密码",Margin=new Padding(0,4,12,4)};
             newPassword=new TextBox{Width=175,UseSystemPasswordChar=true,AccessibleName="新的打开密码",Margin=new Padding(0,4,12,4)};
             controls.Add(optionHost);
             var previewBox=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,BackColor=Color.White,Padding=new Padding(14),Margin=Padding.Empty};previewBox.RowStyles.Add(new RowStyle(SizeType.Absolute,64));previewBox.RowStyles.Add(new RowStyle(SizeType.Percent,100));previewBox.RowStyles.Add(new RowStyle(SizeType.Absolute,48));body.Controls.Add(previewBox,1,0);
@@ -114,7 +125,6 @@ namespace LocalConverter
             download=Button("↓  下载处理结果",220,async(s,e)=>await Download());download.Primary=true;download.BackColor=Theme.Background;download.Visible=false;download.Dock=DockStyle.Fill;footer.Controls.Add(download,0,2);
             status=Label("添加文件开始，本地处理，不上传原文件。",8.5F,Theme.Muted);footer.Controls.Add(status,0,3);
             merge.CheckedChanged+=(s,e)=>RefreshOutcome(false);quality.SelectedIndexChanged+=(s,e)=>RefreshOutcome(false);overwrite.CheckedChanged+=(s,e)=>RefreshOutcome(false);
-            password.TextChanged+=(s,e)=>{if(!changing&&running==null&&!loading){toolResults.Invalidate(mode);RefreshOutcome(false);}};
             newPassword.TextChanged+=(s,e)=>{if(!changing&&running==null&&!loading){toolResults.Invalidate(mode);RefreshOutcome(false);}};
         }
         void SetMode(string value)
@@ -132,12 +142,21 @@ namespace LocalConverter
             if(!editing){document=null;pages.Document=null;pages.ClearImages();pages.Selected.Clear();}
             BuildOptions();start.Text=ActionText;RefreshOutcome(true);SelectFile();
         }
+        void SwitchWorkspace(bool audio){ChangeWorkspace(audio?1:0);}
+        void RefreshSections(){pdfSection.Enabled=audioSection.Enabled=imageSection.Enabled=running==null&&!loading&&!audioWorkspace.Busy&&!imageWorkspace.Busy;}
+        async void ChangeWorkspace(int section)
+        {
+            if(running!=null||loading||audioWorkspace.Busy||imageWorkspace.Busy)return;
+            audioWorkspace.StopPlayback();if(section!=0)await StopVisuals();pdfWorkspace.Visible=section==0;audioWorkspace.Visible=section==1;imageWorkspace.Visible=section==2;
+            if(section==0){pdfWorkspace.BringToFront();SelectFile();}else if(section==1)audioWorkspace.BringToFront();else imageWorkspace.BringToFront();
+            pdfSection.Primary=section==0;audioSection.Primary=section==1;imageSection.Primary=section==2;pdfSection.Invalidate();audioSection.Invalidate();imageSection.Invalidate();Text="文件万能处理器 · "+(section==0?"PDF 处理":section==1?"音频处理":"图片处理");
+        }
         void Caption(string value){options.Controls.Add(new Label{Text=value,AutoSize=true,Margin=new Padding(0,8,8,4),ForeColor=Theme.Muted});}
         Label Hint(string value){if(options.Controls.Count>0)options.SetFlowBreak(options.Controls[options.Controls.Count-1],true);var h=new Label{Text=value,AutoSize=true,Tag="hint",MaximumSize=new Size(Math.Max(100,options.ClientSize.Width-25),0),ForeColor=Theme.Muted,Font=new Font(Font.FontFamily,8.5F),Margin=new Padding(0,6,0,0)};options.SetFlowBreak(h,true);options.Controls.Add(h);return h;}
         void QueueOptionsLayout(){if(optionsLayoutPending||!IsHandleCreated||IsDisposed)return;optionsLayoutPending=true;BeginInvoke(new Action(()=>{optionsLayoutPending=false;if(!IsDisposed)LayoutOptions();}));}
         void LayoutOptions()
         {
-            if(changing||layingOutOptions||options==null||quality==null||splitSettings==null)return;layingOutOptions=true;
+            if(changing||layingOutOptions||options==null||quality==null||splitSettings==null||watermarkSettings==null)return;layingOutOptions=true;
             try
             {
                 int width=Math.Max(180,options.ClientSize.Width-(int)(22*uiScale));
@@ -148,6 +167,7 @@ namespace LocalConverter
                     int desired=textWidth+(int)(36*uiScale);combo.Width=Math.Min(width,desired);combo.DropDownWidth=desired;
                 }
                 splitSettings.SetScale(uiScale);splitSettings.Width=width;
+                watermarkSettings.SetScale(uiScale);watermarkSettings.Width=width;
                 options.PerformLayout();
                 int content=options.Controls.Cast<Control>().Where(c=>c.Visible).Select(c=>c.Bottom+c.Margin.Bottom-options.AutoScrollPosition.Y).DefaultIfEmpty(0).Max();
                 int cap=Math.Max((int)(145*uiScale),Math.Min((int)(340*uiScale),leftLayout.ClientSize.Height-(int)((mode=="页面编辑"?300:180)*uiScale)));
@@ -164,18 +184,18 @@ namespace LocalConverter
                 if((string)format.SelectedItem=="HTML"){Caption("网页方式");options.Controls.Add(htmlMode);options.SetFlowBreak(htmlMode,true);}
                 merge.Visible=cards.Items.Count>1&&(string)format.SelectedItem=="PDF";
                 if(merge.Visible){options.Controls.Add(merge);options.SetFlowBreak(merge,true);}
-                if(cards.Items.Any(f=>f.Path.EndsWith(".pdf",StringComparison.OrdinalIgnoreCase))){Caption("PDF 密码（如有）");options.Controls.Add(password);options.SetFlowBreak(password,true);}
                 string target=(string)format.SelectedItem;
                 Hint(target=="PDF"?"支持 PDF、Word、Excel、PPT、图片和本地 HTML。Office 输入需对应桌面版；HTML 需 Edge/Chrome，远程资源不加载。":target=="XLSX"?"提取可识别表格；无表格时按行保存正文，扫描页保留图片。不恢复公式，不含 OCR。":target=="PPTX"?"每页一张幻灯片，以图片保留外观；文字、表格和图形不拆成可编辑对象。":target=="HTML"?"离线单个 HTML，图片内嵌；保留外观使用页面图片，可编辑正文不保留复杂排版。":target=="DOCX"?"重建可编辑正文，扫描页保留为图片；不还原复杂排版，不含 OCR。":"图片按页分别导出，TXT 提取文字层。其他输入会先转为 PDF，再导出所选格式。");
             }
-            else if(mode=="压缩"){Caption("压缩方式");options.Controls.Add(quality);options.SetFlowBreak(quality,true);Caption("原文件密码（如有）");options.Controls.Add(password);Hint("压缩率取决于原文件。已足够紧凑时保留原大小，不强行增大。");}
-            else if(mode=="加密"){Caption("新的打开密码");options.Controls.Add(newPassword);options.SetFlowBreak(newPassword,true);Caption("原文件密码（如有）");options.Controls.Add(password);Hint("使用 AES-256 加密。密码仅用于本次本地处理，不写入配置。");}
-            else if(mode=="页面编辑"){options.Controls.Add(overwrite);options.SetFlowBreak(overwrite,true);Caption("文件密码（如有）");options.Controls.Add(password);var load=Button("加载 / 刷新页面",145,async(s,e)=>await LoadPages());options.Controls.Add(load);Hint("默认生成新文件；直接修改需确认，并在原目录保留 .bak 备份。");}
+            else if(mode=="压缩"){Caption("压缩方式");options.Controls.Add(quality);options.SetFlowBreak(quality,true);Hint("压缩率取决于原文件。已足够紧凑时保留原大小，不强行增大。");}
+            else if(mode=="水印"){options.Controls.Add(watermarkSettings);options.SetFlowBreak(watermarkSettings,true);Hint("右侧实时预览，样式切换可继续调整角度、字号与透明度；过长文字自动缩小以适应页面。每个输入另存一份 PDF。");}
+            else if(mode=="加密"){Caption("新的打开密码");options.Controls.Add(newPassword);options.SetFlowBreak(newPassword,true);Hint("使用 AES-256 加密。密码仅用于本次本地处理，不写入配置。");}
+            else if(mode=="页面编辑"){options.Controls.Add(overwrite);options.SetFlowBreak(overwrite,true);var load=Button("加载 / 刷新页面",145,async(s,e)=>await LoadPages());options.Controls.Add(load);Hint("默认生成新文件；直接修改需确认，并在原目录保留 .bak 备份。");}
             // A full-width first control wraps naturally. Explicit FlowBreak on the first item
             // makes Framework FlowLayout include the next item's width in its scroll extent.
-            else if(mode=="拆分"){options.Controls.Add(splitSettings);Caption("PDF 打开密码（如有）");options.Controls.Add(password);options.SetFlowBreak(password,true);splitOutputHint=Hint("");}
-            else {Caption("PDF 打开密码（如有）");options.Controls.Add(password);options.SetFlowBreak(password,true);Hint(mode=="移除加密"?"输入正确密码后移除加密，不提供密码破解。多文件使用相同密码时可批量处理。":"按列表顺序合并 PDF；也可加入 Word / 图片，先转为 PDF 后合并。");}
-            options.ResumeLayout();changing=false;LayoutOptions();RefreshOutcome(false);RefreshCommands();UpdateCutPreview();
+            else if(mode=="拆分"){options.Controls.Add(splitSettings);splitOutputHint=Hint("");}
+            else {Hint(mode=="移除加密"?"文件在添加时验证打开密码；此处生成无密码副本，不提供密码破解。":"按列表顺序合并 PDF；也可加入 Word / 图片，先转为 PDF 后合并。");}
+            options.ResumeLayout();changing=false;LayoutOptions();RefreshOutcome(false);RefreshCommands();UpdateCutPreview();UpdateWatermarkPreview();
         }
         void RefreshCommands()
         {
@@ -195,6 +215,7 @@ namespace LocalConverter
             if(mode=="转换"){text.Append('|').Append(format.SelectedItem).Append('|').Append(merge.Checked);if((string)format.SelectedItem=="HTML")text.Append('|').Append(htmlMode.SelectedIndex);}
             if(mode=="压缩")text.Append('|').Append(quality.SelectedIndex);
             if(mode=="拆分")text.Append('|').Append(splitSettings.Context);
+            if(mode=="水印")text.Append('|').Append(watermarkSettings.Snapshot().Context);
             if(mode=="页面编辑"&&document!=null){text.Append('|').Append(document.Source);foreach(var page in document.Pages)text.Append('|').Append(page.Index).Append(':').Append(page.Rotation);}
             return text.ToString();
         }
@@ -214,16 +235,42 @@ namespace LocalConverter
         void AddFiles(string[] paths)
         {
             if(running!=null||loading)return;
-            if(mode=="页面编辑"&&document!=null&&document.CanUndo&&MessageBox.Show(this,"重新加载会清除尚未生成的页面修改，是否继续？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
-            var supported=new[]{".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".html",".htm",".jpg",".jpeg",".png",".bmp",".tif",".tiff"};int skipped=0;
-            foreach(string path in paths)
-            {
-                string ext=Path.GetExtension(path).ToLowerInvariant();if(!File.Exists(path)||!supported.Contains(ext)||((mode!="转换"&&mode!="合并")&&ext!=".pdf")){skipped++;continue;}
-                if(mode=="页面编辑")cards.Items.Clear();if(!cards.Items.Any(f=>f.Path.Equals(Path.GetFullPath(path),StringComparison.OrdinalIgnoreCase)))cards.Items.Add(new InputFile(path));
-            }
-            cards.SelectedIndex=cards.Items.Count>0?cards.Items.Count-1:-1;cards.RefreshLayout();fileCount.Text=cards.Items.Count+" 个文件";BuildOptions();status.Text=skipped>0?"跳过 "+skipped+" 个不支持的文件。":"文件已添加，可点击文件查看预览。";SelectFile();
+            admissionTask=AddFilesAsync(paths);
         }
-        void RemoveFile(int index){if(running!=null||loading)return;if(index<0||index>=cards.Items.Count)return;cards.Items.RemoveAt(index);cards.SelectedIndex=Math.Min(index,cards.Items.Count-1);cards.RefreshLayout();fileCount.Text=cards.Items.Count+" 个文件";BuildOptions();SelectFile();}
+        Task<string> AskPdfPassword(string path,Func<string,CancellationToken,Task<bool>> verify)
+        {
+            using(var dialog=new PdfPasswordDialog(path,verify,loadCancel.Token))return Task.FromResult(dialog.ShowDialog(this)==DialogResult.OK?dialog.Password:null);
+        }
+        async Task AddFilesAsync(string[] paths)
+        {
+            if(mode=="页面编辑"&&document!=null&&document.CanUndo&&MessageBox.Show(this,"重新加载会清除尚未生成的页面修改，是否继续？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
+            var supported=new[]{".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".html",".htm",".jpg",".jpeg",".png",".bmp",".tif",".tiff"};int skipped=0;string problem="";
+            loading=true;loadCancel=new CancellationTokenSource();SetBusy(true);start.Text="取消添加";progress.Indeterminate=true;
+            try
+            {
+                await StopVisuals();int index=0;
+                foreach(string raw in paths)
+                {
+                    loadCancel.Token.ThrowIfCancellationRequested();index++;string path=Path.GetFullPath(raw),ext=Path.GetExtension(path).ToLowerInvariant();
+                    if(!File.Exists(path)||!supported.Contains(ext)||((mode!="转换"&&mode!="合并")&&ext!=".pdf")){skipped++;continue;}
+                    status.Text="正在检查文件 "+index+" / "+paths.Length+" · "+Path.GetFileName(path);
+                    try
+                    {
+                        if(ext==".pdf")
+                        {
+                            if(!pdfAccess.IsCurrent(path)){var old=cards.Items.Find(f=>f.Path.Equals(path,StringComparison.OrdinalIgnoreCase));if(old!=null)cards.Items.Remove(old);if(document!=null&&document.Source.Equals(path,StringComparison.OrdinalIgnoreCase)){document=null;pages.Document=null;pages.ClearImages();}}
+                            if(!await pdfAccess.AdmitAsync(path,engine,loadCancel.Token,AskPdfPassword)){skipped++;continue;}
+                        }
+                        if(mode=="页面编辑")cards.Items.Clear();if(!cards.Items.Any(f=>f.Path.Equals(path,StringComparison.OrdinalIgnoreCase)))cards.Items.Add(new InputFile(path));
+                    }
+                    catch(IOException error){skipped++;problem=error.Message;}
+                }
+            }
+            catch(OperationCanceledException){problem="已取消添加，已验证的文件保留。";}
+            catch(Exception error){problem=error.Message;}
+            finally{pdfAccess.Retain(cards.Items);loadCancel.Dispose();loadCancel=null;loading=false;progress.Indeterminate=false;SetBusy(false);cards.SelectedIndex=cards.Items.Count-1;cards.RefreshLayout();fileCount.Text=cards.Items.Count+" 个文件";BuildOptions();status.Text=problem!=""?problem:skipped>0?"已跳过 "+skipped+" 个未验证、取消或不支持的文件。":"文件已添加，可点击文件查看预览。";start.Text=ActionText;RefreshOutcome(false);SelectFile();if(closeAfterTask){closeAfterTask=false;Close();}}
+        }
+        void RemoveFile(int index){if(running!=null||loading)return;if(index<0||index>=cards.Items.Count)return;pdfAccess.Forget(cards.Items[index].Path);cards.Items.RemoveAt(index);cards.SelectedIndex=Math.Min(index,cards.Items.Count-1);cards.RefreshLayout();fileCount.Text=cards.Items.Count+" 个文件";BuildOptions();SelectFile();}
         void MoveFile(int delta){int i=cards.SelectedIndex,j=i+delta;if(i<0||j<0||j>=cards.Items.Count)return;var f=cards.Items[i];cards.Items[i]=cards.Items[j];cards.Items[j]=f;cards.SelectedIndex=j;cards.Invalidate();RefreshOutcome(false);RefreshCommands();}
         void SelectFile()
         {
@@ -242,6 +289,11 @@ namespace LocalConverter
             else {CancelPreview();pagePicture.Visible=false;quickPreview.Visible=true;quickPreview.ShowFile(file);previewTitle.Text="源文件预览\r\n"+Path.GetFileName(file.Path);pageNumber.Text="正文 / 图片";previewSource="";}
         }
         void CancelPreview(){if(previewCancel!=null)previewCancel.Cancel();}
+        void UpdateWatermarkPreview()
+        {
+            if(pagePicture==null)return;pagePicture.Watermark=mode=="水印"?watermarkSettings.Snapshot():null;pagePicture.Invalidate();
+            if(mode=="水印"&&pagePicture.Visible&&pagePicture.Image!=null)previewTitle.Text=(pagePicture.Watermark.Applies(currentPage+1)?"水印预览 · 修改即生效":"水印预览 · 此页不加水印")+"\r\n"+Path.GetFileName(previewSource);
+        }
         void UpdateCutPreview()
         {
             if(previewPart==null||splitSettings==null)return;
@@ -257,7 +309,7 @@ namespace LocalConverter
         void SchedulePreview()
         {
             CancelPreview();var cts=new CancellationTokenSource();previewCancel=cts;Task old=previewTask;
-            string path=previewSource,secret=password.Text;int index=currentPage,rotation=previewRotation;
+            string path=previewSource,secret="";try{secret=pdfAccess.PasswordFor(path);}catch(IOException error){previewTitle.Text=error.Message;pagePicture.Visible=false;cts.Dispose();previewCancel=null;return;}int index=currentPage,rotation=previewRotation;
             previewTask=RenderPreview(old,path,index,rotation,secret,cts);
         }
         async Task RenderPreview(Task old,string source,int index,int rotation,string secret,CancellationTokenSource cts)
@@ -267,9 +319,9 @@ namespace LocalConverter
                 await old;cts.Token.ThrowIfCancellationRequested();await quickPreview.StopAsync();
                 quickPreview.Visible=false;pagePicture.Visible=true;previewTitle.Text="正在加载第 "+(index+1)+" 页…\r\n"+Path.GetFileName(source);
                 var rendered=await Task.Run(()=>previewRenderer.Render(source,index,rotation,1300,secret,cts.Token));
-                cts.Token.ThrowIfCancellationRequested();pageCount=rendered.Count;
+                cts.Token.ThrowIfCancellationRequested();pageCount=rendered.Count;pagePicture.PageWidth=rendered.Width;pagePicture.PageHeight=rendered.Height;pagePicture.PageIndex=index;
                 using(var image=Image.FromFile(rendered.Path)){var bitmap=new Bitmap(image);var previous=pagePicture.Image;pagePicture.Image=bitmap;if(previous!=null)previous.Dispose();}
-                previewTitle.Text="页面预览\r\n"+Path.GetFileName(source);pageNumber.Text=(index+1)+" / "+pageCount;UpdateCutPreview();
+                previewTitle.Text="页面预览\r\n"+Path.GetFileName(source);pageNumber.Text=(index+1)+" / "+pageCount;UpdateCutPreview();UpdateWatermarkPreview();
             }
             catch(OperationCanceledException){}
             catch(Exception e){if(!cts.IsCancellationRequested){quickPreview.Visible=true;quickPreview.ShowFile(null);pagePicture.Visible=false;previewTitle.Text="预览不可用\r\n"+e.Message;}}
@@ -294,7 +346,7 @@ namespace LocalConverter
             if(document!=null&&document.Source==file.Path&&document.CanUndo&&MessageBox.Show(this,"刷新会清除尚未生成的页面修改，是否继续？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
             loading=true;loadCancel=new CancellationTokenSource();var token=loadCancel.Token;SetBusy(true);start.Text="取消加载";try
             {
-                await StopVisuals();status.Text="正在读取 PDF 页面…";string secret=password.Text;
+                await StopVisuals();status.Text="正在读取 PDF 页面…";string secret=pdfAccess.PasswordFor(file.Path);
                 var info=await Task.Run(()=>engine.Run("inspect",new Dictionary<string,object>{{"files",new[]{file.Path}},{"password",secret}},token));
                 var source=new FileInfo(file.Path);document=new PageDocument{Source=file.Path,OriginalLength=source.Length,OriginalModified=source.LastWriteTimeUtc};int count=System.Convert.ToInt32(info["count"]);
                 document.Pages=Enumerable.Range(0,count).Select(i=>new PageItem{Index=i}).ToList();pages.Document=document;pages.ClearImages();pages.Selected.Clear();if(count>0)pages.Selected.Add(0);pages.RefreshLayout();status.Text="已加载 "+count+" 页，可拖动排序、框选和旋转。";
@@ -313,7 +365,8 @@ namespace LocalConverter
         void ScheduleThumbnails()
         {
             if(loading||document==null||mode!="页面编辑"||running!=null)return;
-            if(thumbCancel!=null)thumbCancel.Cancel();var cts=new CancellationTokenSource();thumbCancel=cts;var source=document;string secret=password.Text;Task old=thumbTask;thumbTask=RenderThumbnails(old,source,secret,cts);
+            string secret;try{secret=pdfAccess.PasswordFor(document.Source);}catch(IOException error){status.Text=error.Message;return;}
+            if(thumbCancel!=null)thumbCancel.Cancel();var cts=new CancellationTokenSource();thumbCancel=cts;var source=document;Task old=thumbTask;thumbTask=RenderThumbnails(old,source,secret,cts);
         }
         async Task RenderThumbnails(Task old,PageDocument source,string secret,CancellationTokenSource cts)
         {
@@ -329,27 +382,32 @@ namespace LocalConverter
             finally{if(thumbCancel==cts)thumbCancel=null;cts.Dispose();}
         }
         async Task StopVisuals(){CancelPreview();if(thumbCancel!=null)thumbCancel.Cancel();await previewTask;await thumbTask;await quickPreview.StopAsync();}
-        void SetBusy(bool busy){foreach(var c in controls)c.Enabled=!busy;optionHost.Enabled=!busy;download.Enabled=!busy;start.Enabled=true;RefreshCommands();}
+        void SetBusy(bool busy){foreach(var c in controls)c.Enabled=!busy;optionHost.Enabled=!busy;download.Enabled=!busy;start.Enabled=true;RefreshCommands();RefreshSections();}
         void Error(Exception e){status.Text=e.Message;MessageBox.Show(this,e.Message,"处理提示",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
         async Task ProcessFiles()
         {
+            if(!admissionTask.IsCompleted)await admissionTask;if(loading||running!=null)return;
+            var changed=cards.Items.Where(f=>f.Path.EndsWith(".pdf",StringComparison.OrdinalIgnoreCase)&&!pdfAccess.IsCurrent(f.Path)).Select(f=>f.Path).ToArray();if(changed.Length>0){await AddFilesAsync(changed);if(loading||changed.Any(p=>!pdfAccess.IsCurrent(p)))return;}
             if(cards.Items.Count==0){status.Text="请先添加文件。";return;}
             if(results!=null&&!results.Downloaded&&results.Files.Length>0&&MessageBox.Show(this,"上次结果还未下载，继续处理会清除上次结果，是否继续？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
             if(mode=="页面编辑"&&document==null){status.Text="请先加载 PDF 页面。";return;}
             if(mode=="加密"&&newPassword.Text.Length==0){status.Text="请设置新的打开密码。";return;}
             Dictionary<string,object> splitValues=null;
             if(mode=="拆分"){try{splitValues=splitSettings.JobValues();}catch(Exception e){Error(e);return;}}
+            WatermarkSpec watermark=null;if(mode=="水印"){try{watermark=watermarkSettings.Snapshot();watermark.Validate();}catch(Exception e){Error(e);return;}}
             bool direct=mode=="页面编辑"&&overwrite.Checked;
             if(direct&&MessageBox.Show(this,"将直接修改：\r\n"+document.Source+"\r\n原件会自动保存为同目录 .bak 备份。确认保存？",Text,MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            var files=cards.Items.Select(f=>new InputFile(f.Path){Rotation=f.Rotation}).ToList();Dictionary<string,string> passwords;
+            try{passwords=pdfAccess.Snapshot(files);}catch(Exception error){Error(error);return;}
             results=new ResultSession();download.Visible=false;
-            var files=cards.Items.Select(f=>new InputFile(f.Path){Rotation=f.Rotation}).ToList();string secret=password.Text,newSecret=newPassword.Text,target=(string)format.SelectedItem;bool combine=merge.Checked;string action=mode;
+            string newSecret=newPassword.Text,target=(string)format.SelectedItem;bool combine=merge.Checked;string action=mode;
             string compression=quality.SelectedIndex==0?"lossless":quality.SelectedIndex==1?"balanced":"small";string htmlStyle=htmlMode.SelectedIndex==0?"appearance":"text";var editor=document;
             running=new CancellationTokenSource();SetBusy(true);start.Text="取消处理";progress.Value=0;
             var reporter=new Progress<Tuple<int,string>>(p=>{progress.Value=p.Item1;status.Text=p.Item2;});Action<int,string> report=(p,s)=>((IProgress<Tuple<int,string>>)reporter).Report(Tuple.Create(p,s));
             try
             {
                 await StopVisuals();var token=running.Token;
-                string note=await Task.Run(()=>Execute(files,action,target,combine,secret,newSecret,compression,editor,splitValues,htmlStyle,token,report));
+                string note=await Task.Run(()=>action=="水印"?WatermarkJob.Run(engine,files.Select(f=>f.Path).ToArray(),results.Folder,"",watermark,token,report,passwords):Execute(files,action,target,combine,passwords,newSecret,compression,editor,splitValues,htmlStyle,token,report));
                 token.ThrowIfCancellationRequested();
                 if(direct)
                 {
@@ -375,9 +433,9 @@ namespace LocalConverter
             return prepared;
         }
         static void ExportDocument(string input,string output,CancellationToken token){if(OfficeConverter.Supports(input))OfficeConverter.ExportFile(input,output,token);else if(HtmlConverter.Supports(input))HtmlConverter.ExportFile(input,output,token);else WordConverter.ExportFile(input,output,token);}
-        string Execute(List<InputFile> files,string action,string target,bool combine,string secret,string newSecret,string compression,PageDocument editor,Dictionary<string,object> splitValues,string htmlStyle,CancellationToken token,Action<int,string> report)
+        string Execute(List<InputFile> files,string action,string target,bool combine,Dictionary<string,string> passwords,string newSecret,string compression,PageDocument editor,Dictionary<string,object> splitValues,string htmlStyle,CancellationToken token,Action<int,string> report)
         {
-            var values=new Dictionary<string,object>{{"files",files.Select(f=>f.Path).ToArray()},{"folder",results.Folder},{"password",secret}};
+            var values=new Dictionary<string,object>{{"files",files.Select(f=>f.Path).ToArray()},{"folder",results.Folder},{"passwords",passwords}};
             string code=action=="合并"?"merge":action=="加密"?"encrypt":action=="移除加密"?"decrypt":action=="压缩"?"compress":action=="页面编辑"?"edit":action=="拆分"?"split":"convert";
             if(action=="转换"&&target=="PDF"||action=="合并")
             {
@@ -436,12 +494,15 @@ namespace LocalConverter
         async void ClosingForm(object sender,FormClosingEventArgs e)
         {
             if(closeReady)return;e.Cancel=true;
+            if(audioWorkspace.Busy||audioWorkspace.BackgroundDownloads.HasActive){if(MessageBox.Show(this,"取消音频任务和后台引擎下载并关闭？已下载片段会保留，之后可续传。",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await audioWorkspace.StopAsync();}
+            if(imageWorkspace.Busy){if(MessageBox.Show(this,"取消图片任务并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await imageWorkspace.StopAsync();}
             if(loading){if(!closeAfterTask&&MessageBox.Show(this,"取消加载并关闭软件？",Text,MessageBoxButtons.YesNo)==DialogResult.Yes){closeAfterTask=true;loadCancel.Cancel();}return;}
             if(running!=null){if(!closeAfterTask&&MessageBox.Show(this,"取消当前任务并关闭？",Text,MessageBoxButtons.YesNo)==DialogResult.Yes){closeAfterTask=true;running.Cancel();}return;}
-            var pending=toolResults.PendingTools;
+            var pending=toolResults.PendingTools.Concat(audioWorkspace.PendingTools.Select(name=>"音频 / "+name)).Concat(imageWorkspace.PendingTools.Select(name=>"图片 / "+name)).ToArray();
             if(pending.Length>0&&MessageBox.Show(this,"以下功能还有结果未下载："+String.Join("、",pending)+"。关闭会清理临时结果，确认关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes){closing=false;return;}
             if(document!=null&&document.CanUndo&&!closing&&MessageBox.Show(this,"页面修改尚在工作区，确认放弃并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
-            if(closing)return;closing=true;Enabled=false;await StopVisuals();closeReady=true;BeginInvoke(new Action(Close));
+            if(imageWorkspace.HasEdits&&!closing&&MessageBox.Show(this,"图片编辑仍在工作区，确认放弃并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
+            if(closing)return;closing=true;Enabled=false;await imageWorkspace.StopAsync();await StopVisuals();closeReady=true;BeginInvoke(new Action(Close));
         }
     }
 }

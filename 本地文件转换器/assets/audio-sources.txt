@@ -1,0 +1,27 @@
+Offline audio runtime for File Universal Processor 0.6.0
+
+1. Conversion and probing: FFmpeg audio-only LGPL shared build by Xiragi.
+   Project and reproducible build workflows:
+   https://github.com/Xiragi/FFmpeg-Audio-Builds
+   Download URL, archive SHA256 and individual runtime hashes:
+   assets/audio-runtime.lock.json in the application's source repository.
+   Runtime license: LICENSE-FFmpeg-Audio.txt (LGPL v3).
+   The build includes LAME, Opus and Vorbis. Their sources and licenses are
+   referenced by that build project's scripts.d build recipes:
+   https://github.com/Xiragi/FFmpeg-Audio-Builds/tree/master/scripts.d
+   https://lame.sourceforge.io/
+   https://opus-codec.org/
+   https://xiph.org/vorbis/
+
+2. AudioDenoise.exe: built locally from unmodified FFmpeg 9.0.2 sources.
+   Source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
+   SHA256: 8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+   Build recipe: scripts/build-audio-denoise.sh in the application's source.
+   Compiler used: MinGW-w64 GCC 8.1.0, x86_64-win32-seh-rev0.
+   License: LICENSE-AudioDenoise.txt (LGPL v2.1 or later).
+   Configuration enables only local PCM/WAV input, PCM/WMA output,
+   afftdn, bandreject and necessary audio conversion filters. No network.
+
+No codec modifications were made. This runtime is bundled as independent
+executables/DLLs. No external FFmpeg installation, cloud service, AI model,
+GPU runtime or Python audio framework is required for normal use.

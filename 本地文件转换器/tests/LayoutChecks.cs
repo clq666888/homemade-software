@@ -13,7 +13,7 @@ static class LayoutChecks
     [DllImport("user32.dll")]static extern bool SetProcessDPIAware();
     static int checks;
     static T Field<T>(MainForm form,string name){return (T)typeof(MainForm).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(form);}
-    static object Call(MainForm form,string name,params object[] args){return typeof(MainForm).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,args);}
+    static object Call(MainForm form,string name,params object[] args){System.Threading.SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());var value=typeof(MainForm).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,args);if(name=="AddFiles"){var task=Field<Task>(form,"admissionTask");while(!task.IsCompleted){Application.DoEvents();System.Threading.Thread.Sleep(5);}task.GetAwaiter().GetResult();}return value;}
     static void Check(bool value,string name){if(!value)throw new Exception(name);checks++;Console.WriteLine("PASS "+name);}
     static void Snapshot(MainForm form,string path){form.PerformLayout();Application.DoEvents();using(var bitmap=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(bitmap,new Rectangle(Point.Empty,form.Size));bitmap.Save(path);}}
     [STAThread]static int Main(string[] args)
@@ -26,8 +26,8 @@ static class LayoutChecks
             {
                 form.Show();Application.DoEvents();
                 var tabs=Field<System.Collections.Generic.Dictionary<string,FunctionTab>>(form,"tabs");
-                Check(tabs.Values.OrderBy(t=>t.Left).Select(t=>t.Text).SequenceEqual(new[]{"转换","页面编辑","合并","拆分","加密","移除加密","压缩"}),"navigation order matches requested workflow");
-                Check(tabs.First().Value.Parent.Controls.OfType<Panel>().Count()==6,"navigation items have six visible separators");
+                Check(tabs.Values.OrderBy(t=>t.Left).Select(t=>t.Text).SequenceEqual(new[]{"转换","页面编辑","合并","拆分","水印","加密","移除加密","压缩"}),"navigation order matches requested workflow");
+                Check(tabs.First().Value.Parent.Controls.OfType<Panel>().Count()==7,"navigation items have seven visible separators");
                 Call(form,"SetMode","压缩");Application.DoEvents();var quality=Field<ComboBox>(form,"quality");
                 int text=quality.Items.Cast<object>().Max(item=>TextRenderer.MeasureText(item.ToString(),quality.Font).Width);
                 Check(quality.Width>=text+SystemInformation.VerticalScrollBarWidth+8&&quality.DropDownWidth>=quality.Width,"compression combo fits longest Chinese label");

@@ -49,7 +49,7 @@ namespace LocalConverter
             if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(g,new Rectangle(5,5,Width-10,Height-(int)(10*scale)));
         }
     }
-    public enum ButtonAppearance { Standard, Toolbar }
+    public enum ButtonAppearance { Standard, Toolbar, Sidebar }
     public sealed class ModernButton : Button
     {
         public bool Primary;
@@ -64,6 +64,12 @@ namespace LocalConverter
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(Parent==null?Theme.Background:Parent.BackColor);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;var r=new RectangleF(1,1,Width-3,Height-3);
+            if(Appearance==ButtonAppearance.Sidebar)
+            {
+                if(Primary||hover&&Enabled)Theme.Fill(e.Graphics,Primary?Theme.Blue:Color.FromArgb(39,57,84),r,8);
+                Theme.Text(e.Graphics,Text,Font,!Enabled?Theme.Muted:Primary?Color.White:Color.FromArgb(207,220,239),new RectangleF(16,0,Width-25,Height));
+                if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(6,6,Width-12,Height-12));return;
+            }
             if(Appearance==ButtonAppearance.Toolbar)
             {
                 if(hover&&Enabled)Theme.Fill(e.Graphics,Color.FromArgb(235,240,248),r,6);
@@ -163,7 +169,7 @@ namespace LocalConverter
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.ScaleTransform(unit,unit);g.TranslateTransform(0,AutoScrollPosition.Y/unit);
-            if(Document==null){Theme.Text(g,"选择一份 PDF，加载所有页面",Font,Theme.Muted,new RectangleF(12,60,ClientSize.Width/unit-24,60),StringAlignment.Center);return;}
+            if(Document==null){Theme.Text(g,"页面总览",Font,Theme.Muted,new RectangleF(12,60,ClientSize.Width/unit-24,60),StringAlignment.Center);return;}
             float top=-AutoScrollPosition.Y/unit,bottom=top+Height/unit;
             for(int i=0;i<Document.Pages.Count;i++)
             {

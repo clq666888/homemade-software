@@ -9,6 +9,7 @@ from collections import OrderedDict
 from contextlib import closing
 from pathlib import Path
 import pypdfium2 as pdfium
+from pypdf import PdfReader
 
 
 def serve(folder):
@@ -31,10 +32,11 @@ def serve(folder):
                 except ValueError:requests.put({})
         finally:requests.put(None)
     threading.Thread(target=receive,daemon=True).start()
-    document=None;identity=None;cache=OrderedDict();snapshot=folder/'source.pdf'
+    document=None;metadata=None;identity=None;cache=OrderedDict();snapshot=folder/'source.pdf'
     def clear():
-        nonlocal document,identity
+        nonlocal document,metadata,identity
         if document is not None:document.close();document=None
+        if metadata is not None:metadata.close();metadata=None
         identity=None
         for path in cache.values():path.unlink(missing_ok=True)
         cache.clear();snapshot.unlink(missing_ok=True)
@@ -63,12 +65,17 @@ def serve(folder):
                     try:document=pdfium.PdfDocument(snapshot,password=secret or None)
                     except Exception as error:
                         clear();raise ValueError('PDF 无法预览，请检查文件和打开密码。') from error
+                    metadata=PdfReader(snapshot)
+                    if metadata.is_encrypted:metadata.decrypt(secret)
                     identity=key
                 count=len(document);index=int(job['index']);rotation=int(job.get('rotation',0))%360;edge=max(100,min(int(job.get('edge',1300)),2000))
                 if not 0<=index<count:raise ValueError('预览页码超出范围。')
                 if rotation not in (0,90,180,270):raise ValueError('页面旋转角度无效。')
                 path,cached=render(index,rotation,edge)
-                answer={'ok':True,'path':str(path),'count':count,'cached':cached}
+                with closing(document[index]) as page:width,height=page.get_size()
+                unit=float(metadata.pages[index].get('/UserUnit',1));width*=unit;height*=unit
+                if rotation in (90,270):width,height=height,width
+                answer={'ok':True,'path':str(path),'count':count,'cached':cached,'width':width,'height':height}
             except Exception as error:
                 answer={'ok':False,'error':str(error)}
             sys.stdout.write(json.dumps(answer,ensure_ascii=True)+'\n');sys.stdout.flush()

@@ -1,0 +1,17 @@
+Offline image processing / OCR runtime
+Raster codecs: existing Pillow 13.0.0; licenses in ../licenses/Pillow and engine/_internal.
+OCR native binaries: Tesseract NuGet 5.2.0 (Charles Weld packaging), Windows x64 only.
+https://www.nuget.org/packages/Tesseract/5.2.0
+https://github.com/charlesw/tesseract
+https://github.com/tesseract-ocr/tesseract/tree/5.2.0 (Apache 2.0)
+Leptonica 1.82.0, BSD style license: https://github.com/DanBloomberg/leptonica/tree/1.82.0
+Fast LSTM models, eng + chi_sim only, Apache 2.0:
+https://github.com/tesseract-ocr/tessdata_fast/tree/87416418657359cb625c412a48b6e1d6d41c29bd
+Microsoft Visual C++ 14.44.35211 x64: only app-local required runtime DLLs, no installer is run.
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+Microsoft terms are retained in licenses/VC-LICENSE.rtf.
+Sources and individual SHA256 hashes are pinned in assets/image-runtime.lock.json.
+No image files, recognized text, or passwords are transmitted. The application makes no OCR network calls.
+Build restoration: scripts/prepare-image.py verifies an existing runtime, or fetches the pinned inputs.
+HEIC/HEIF, SVG, camera RAW and PSD layered editing are not part of this release.
+Evaluation rejected the pillow-heif 1.8.1 binary wheel (28.82 MB unpacked, GPLv2 binary terms); it is not shipped.

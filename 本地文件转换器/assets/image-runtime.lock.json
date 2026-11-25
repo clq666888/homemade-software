@@ -1,0 +1,18 @@
+{
+  "nuget": {"url":"https://api.nuget.org/v3-flatcontainer/tesseract/5.2.0/tesseract.5.2.0.nupkg","sha256":"202d82fc7c7d8384df7da57206d5e1f456ccdabd648c46e67cdfaa3a911d4795"},
+  "redist": {"url":"https://aka.ms/vs/17/release/vc_redist.x64.exe","sha256":"cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b"},
+  "modelsRevision":"87416418657359cb625c412a48b6e1d6d41c29bd",
+  "files": {
+    "leptonica-1.82.0.dll":{"bytes":4168192,"sha256":"dfcb3e6ed0b16bc55bfdbcf53543cfe42a354b87c3e35bd3a95eebf005d73e76"},
+    "msvcp140.dll":{"bytes":557728,"sha256":"0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9"},
+    "tesseract50.dll":{"bytes":2788352,"sha256":"de4d04ec75095374d98f5dd7a60d14d7e2e0f76589db693eccf7ae658be8cb2b"},
+    "vcruntime140.dll":{"bytes":124544,"sha256":"d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"},
+    "vcruntime140_1.dll":{"bytes":49792,"sha256":"1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f"},
+    "licenses/Leptonica-LICENSE.txt":{"bytes":1521,"sha256":"87829abb5bbb00b55a107365da89e9a33f86c4250169e5a1e5588505be7d5806"},
+    "licenses/models-LICENSE.txt":{"bytes":11358,"sha256":"cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"},
+    "licenses/Tesseract-LICENSE.txt":{"bytes":11358,"sha256":"cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"},
+    "licenses/VC-LICENSE.rtf":{"bytes":9235,"sha256":"8099dc3cf9502c335da829e5c755948a12e3e6de490eb492a99deb673d883d8b"},
+    "tessdata/chi_sim.traineddata":{"bytes":2469156,"sha256":"a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730"},
+    "tessdata/eng.traineddata":{"bytes":4113088,"sha256":"7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"}
+  }
+}

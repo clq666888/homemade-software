@@ -4,7 +4,11 @@ $project=Split-Path -Parent $PSScriptRoot
 $stage=Join-Path $project '.work\release'
 $stageExe=Join-Path $stage '文件万能处理器.exe'
 if (!(Test-Path -LiteralPath (Join-Path $stage 'engine\PdfEngine.exe'))) { throw 'Staged PDF engine missing' }
-if ((Get-Item -LiteralPath $stageExe).VersionInfo.FileVersion -ne '0.4.3.0') { throw 'Unexpected staged version' }
+$versionSource=Get-Content -LiteralPath (Join-Path $project 'src\Program.cs') -Raw
+$expectedVersion=[regex]::Match($versionSource,'AssemblyFileVersion\("([0-9.]+)"\)').Groups[1].Value
+if ((Get-Item -LiteralPath $stageExe).VersionInfo.FileVersion -ne $expectedVersion) { throw 'Unexpected staged version' }
+if (!(Test-Path -LiteralPath (Join-Path $stage 'audio\ffmpeg.exe'))) { throw 'Staged audio engine missing' }
+if (!(Test-Path -LiteralPath (Join-Path $stage 'ocr\tesseract50.dll'))) { throw 'Staged OCR engine missing' }
 function Remove-Generated([string]$relative){
     $candidate=Join-Path $project $relative
     if(Test-Path -LiteralPath $candidate){
@@ -22,7 +26,7 @@ $destination=Join-Path $project 'dist\文件万能处理器'
 Remove-Generated 'dist\文件万能处理器'
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 Copy-Item -LiteralPath $stageExe -Destination (Join-Path $destination '文件万能处理器.exe')
-foreach($name in @('engine','licenses')){Copy-Item -LiteralPath (Join-Path $stage $name) -Destination (Join-Path $destination $name) -Recurse}
+foreach($name in @('engine','licenses','audio','ocr')){Copy-Item -LiteralPath (Join-Path $stage $name) -Destination (Join-Path $destination $name) -Recurse}
 Copy-Item -LiteralPath (Join-Path $project 'README.md') -Destination (Join-Path $destination '使用说明.md')
 Copy-Item -LiteralPath $stageExe -Destination (Join-Path $project '文件万能处理器.exe') -Force
 # Retire the exact prior generated package only after the new entry is in place.
