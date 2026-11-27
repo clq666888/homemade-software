@@ -22,6 +22,13 @@ namespace LocalConverter
         public readonly string Root;readonly JavaScriptSerializer json=new JavaScriptSerializer{MaxJsonLength=4000000};readonly System.Collections.Generic.Dictionary<string,Tuple<long,long,EngineReceipt>> receipts=new System.Collections.Generic.Dictionary<string,Tuple<long,long,EngineReceipt>>();readonly object gate=new object();
         public EngineStore(string root=null){Root=Path.GetFullPath(root??SpeechCatalog.DefaultRoot);Directory.CreateDirectory(Root);RejectLinks(Root);}
         readonly Dictionary<string,object> packageGates=new Dictionary<string,object>();
+        readonly Dictionary<string,int> uses=new Dictionary<string,int>();readonly HashSet<string> removing=new HashSet<string>();
+        sealed class Usage : IDisposable{EngineStore owner;readonly string[] ids;public Usage(EngineStore owner,string[] ids){this.owner=owner;this.ids=ids;}public void Dispose(){var current=Interlocked.Exchange(ref owner,null);if(current!=null)lock(current.gate)foreach(string id in ids){if(--current.uses[id]==0)current.uses.Remove(id);}}}
+        public IDisposable Use(params string[] ids)
+        {
+            ids=ids.Where(id=>!String.IsNullOrEmpty(id)).Distinct().ToArray();lock(gate){if(ids.Any(id=>removing.Contains(id)))throw new IOException("所需引擎正在卸载，请等待完成后重新下载。");foreach(string id in ids){int n;uses.TryGetValue(id,out n);uses[id]=n+1;}}return new Usage(this,ids);
+        }
+        public bool InUse(string id){lock(gate)return uses.ContainsKey(id)||removing.Contains(id);}
         sealed class Lease : IDisposable{readonly object value;public Lease(object value){this.value=value;}public void Dispose(){Monitor.Exit(value);}}
         IDisposable EnterPackage(EnginePackage package,CancellationToken token)
         {
@@ -34,6 +41,38 @@ namespace LocalConverter
         }
         static void RejectLinks(string path){for(var d=new DirectoryInfo(path);d!=null;d=d.Parent)if(d.Exists&&(d.Attributes&FileAttributes.ReparsePoint)!=0)throw new IOException("引擎目录不支持符号链接或目录联接。");}
         public string PackageRoot(EnginePackage p){return Inside(Root,p.Folder);}
+        string Fragment(EnginePackage package)
+        {
+            if(String.IsNullOrWhiteSpace(package.Id)||package.Id=="."||package.Id==".."||package.Id.IndexOfAny(Path.GetInvalidFileNameChars())>=0)throw new IOException("资源编号无效。");return Inside(Root,"downloads/"+package.Id+".part");
+        }
+        public long PartialBytes(EnginePackage package){try{var file=new FileInfo(Fragment(package));return file.Exists?file.Length:0;}catch(IOException){return 0;}catch(UnauthorizedAccessException){return 0;}}
+        public void DiscardDownload(EnginePackage package)
+        {
+            using(EnterPackage(package,CancellationToken.None)){string path=Fragment(package);RejectLinks(path);if(File.Exists(path))File.Delete(path);}
+        }
+        public bool CanUninstall(EnginePackage package){var receipt=Receipt(PackageRoot(package));return receipt!=null&&receipt.Id==package.Id;}
+        public void Uninstall(EnginePackage package)
+        {
+            using(EnterPackage(package,CancellationToken.None))
+            {
+                string[] parts=(package.Folder??"").Replace('\\','/').Split('/');if(parts.Length!=2||!new[]{"runtimes","models","voice-packs"}.Contains(parts[0])||String.IsNullOrWhiteSpace(parts[1])||parts[1]=="."||parts[1]=="..")throw new IOException("只能卸载外置引擎目录内已登记的资源。");
+                string folder=PackageRoot(package);RejectLinks(folder);lock(gate){if(uses.ContainsKey(package.Id))throw new IOException("该资源正在使用，请等待处理结束后再卸载。");removing.Add(package.Id);}
+                try
+                {
+                    if(Directory.Exists(folder)){if(!CanUninstall(package))throw new IOException("资源目录没有匹配的安装记录，未删除未知文件。");foreach(string p in Directory.GetFileSystemEntries(folder,"*",SearchOption.AllDirectories))if((File.GetAttributes(p)&FileAttributes.ReparsePoint)!=0)throw new IOException("资源中包含链接，未卸载。");
+                        // Preflight file sharing before removing anything; another process may use this portable engine.
+                        foreach(string p in Directory.GetFiles(folder,"*",SearchOption.AllDirectories)){if((File.GetAttributes(p)&FileAttributes.ReadOnly)!=0)throw new IOException("资源文件为只读，未卸载。请先解除文件只读状态。");using(var input=new FileStream(p,FileMode.Open,FileAccess.Read,FileShare.None)){}}
+                        RemoveGenerated(folder);lock(gate)receipts.Remove(Inside(folder,"installed.json"));
+                    }
+                    string fragment=Fragment(package);RejectLinks(fragment);if(File.Exists(fragment))File.Delete(fragment);
+                }
+                finally{lock(gate)removing.Remove(package.Id);}
+            }
+        }
+        public EnginePackage[] ImportedPackages()
+        {
+            var list=new List<EnginePackage>();string directory=Inside(Root,"voice-packs");if(!Directory.Exists(directory))return list.ToArray();foreach(string folder in Directory.GetDirectories(directory,"custom-*"))try{RejectLinks(folder);var receipt=Receipt(folder);string id=Path.GetFileName(folder);if(receipt==null||receipt.Id!=id)continue;var manifest=new JavaScriptSerializer().Deserialize<LocalVoiceManifest>(File.ReadAllText(Inside(folder,"voice-pack.json")));list.Add(new EnginePackage{Id=id,Name=String.IsNullOrWhiteSpace(manifest.Name)?"导入音色包":manifest.Name,Folder="voice-packs/"+id,Sha256=receipt.SourceHash,Archive="local",License=manifest.License});}catch(IOException){}catch(UnauthorizedAccessException){}catch(ArgumentException){}return list.ToArray();
+        }
         public static string Find(string root,string name){if(!Directory.Exists(root))throw new IOException("引擎尚未安装。");var found=Directory.GetFiles(root,name,SearchOption.AllDirectories);if(found.Length!=1)throw new IOException("引擎资源缺失或重复："+name);return found[0];}
         EngineReceipt Receipt(string folder){try{string path=Inside(folder,"installed.json");var f=new FileInfo(path);if(!f.Exists)return null;lock(gate){Tuple<long,long,EngineReceipt> cached;if(receipts.TryGetValue(path,out cached)&&cached.Item1==f.Length&&cached.Item2==f.LastWriteTimeUtc.Ticks)return cached.Item3;var value=new JavaScriptSerializer{MaxJsonLength=4000000}.Deserialize<EngineReceipt>(File.ReadAllText(path));receipts[path]=Tuple.Create(f.Length,f.LastWriteTimeUtc.Ticks,value);return value;}}catch(IOException){return null;}catch(ArgumentException){return null;}}
         static bool Critical(string name){string ext=Path.GetExtension(name).ToLowerInvariant();return ext==".exe"||ext==".dll"||ext==".onnx"||name.EndsWith("model.bin",StringComparison.OrdinalIgnoreCase)||name.EndsWith("voices.bin",StringComparison.OrdinalIgnoreCase)||name.EndsWith("tokens.txt",StringComparison.OrdinalIgnoreCase);}
@@ -46,6 +85,7 @@ namespace LocalConverter
         {
             if(!Installed(package))throw new IOException("引擎未安装或文件已变化，请联网下载/修复。");var folder=PackageRoot(package);foreach(var file in Receipt(folder).Files.Where(f=>Critical(f.Path))){token.ThrowIfCancellationRequested();if(Hash(Inside(folder,file.Path),token)!=file.Hash)throw new IOException("引擎完整性校验失败，请重新下载："+file.Path);}
         }
+        public string VersionStamp(string folder){var receipt=Receipt(folder);if(receipt==null)throw new IOException("资源尚未登记。");return folder+"|"+receipt.SourceHash+"|"+String.Join("|",receipt.Files.Select(f=>{var info=new FileInfo(Inside(folder,f.Path));return f.Path+":"+(info.Exists?info.Length+":"+info.LastWriteTimeUtc.Ticks:"missing");}));}
         public static string Hash(string path,CancellationToken token){using(var s=File.OpenRead(path))using(var sha=SHA256.Create()){byte[] buffer=new byte[1024*1024];int n;while((n=s.Read(buffer,0,buffer.Length))>0){token.ThrowIfCancellationRequested();sha.TransformBlock(buffer,0,n,buffer,0);}sha.TransformFinalBlock(buffer,0,0);return BitConverter.ToString(sha.Hash).Replace("-","").ToLowerInvariant();}}
         public void Install(IEnumerable<EnginePackage> packages,CancellationToken token,Action<EngineProgress> progress)
         {
@@ -84,6 +124,7 @@ namespace LocalConverter
         {using(EnterPackage(package,token))InstallArchiveCore(package,archive,token,progress);}
         void InstallArchiveCore(EnginePackage package,string archive,CancellationToken token,Action<string> progress)
         {
+            if(InUse(package.Id))throw new IOException("该资源正在使用，请等待处理结束后再安装或修复。");
             progress("正在校验下载文件…");if(new FileInfo(archive).Length!=package.Bytes||Hash(archive,token)!=package.Sha256){if(Path.GetFullPath(archive).StartsWith(Inside(Root,"downloads")+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))File.Delete(archive);throw new IOException("资源大小或 SHA256 校验不符，未启用此资源，请重新下载。");}
             string stage=Inside(Root,".install-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(stage);
             try
@@ -91,6 +132,7 @@ namespace LocalConverter
                 progress("正在解压安装，请稍等…");if(package.Archive=="file")File.Copy(archive,Inside(stage,package.FileName));else if(package.Archive=="zip")ExtractZip(archive,stage,token);else if(package.Archive=="tar")ExtractTar(archive,stage,token);else throw new IOException("未知资源包格式。");
                 token.ThrowIfCancellationRequested();if(package.Id=="whisper-runtime")SpeechProcess.EnableWhisperUtf8(Find(stage,"whisper-cli.exe"));
                 if(package.Id=="sherpa-runtime"){string library=Find(stage,"sherpa-onnx-c-api.dll");if(!File.Exists(Path.Combine(Path.GetDirectoryName(library),"onnxruntime.dll")))throw new IOException("语音生成引擎缺少配套CPU运行库。");}if(package.Id=="kokoro-11"||package.Id=="kokoro-10"){Find(stage,"model.int8.onnx");Find(stage,"voices.bin");Find(stage,"tokens.txt");}
+                if(package.Id==VideoCatalog.Runtime.Id){Find(stage,"ffmpeg.exe");Find(stage,"ffprobe.exe");Find(stage,"avcodec-63.dll");}
                 WriteReceipt(stage,package.Id,package.Sha256,token);Commit(stage,PackageRoot(package));stage=null;
             }
             finally{if(stage!=null)RemoveGenerated(stage);}

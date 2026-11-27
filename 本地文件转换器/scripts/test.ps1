@@ -52,10 +52,18 @@ if($LASTEXITCODE -ne 0){throw 'Audio workflow regression failed'}
 if($LASTEXITCODE -ne 0){throw 'Speech navigation test compile failed'}
 & (Join-Path $stage 'SpeechNavigationChecks.exe') (Join-Path $run 'speech-navigation')
 if($LASTEXITCODE -ne 0){throw 'Speech navigation checks failed'}
-& $compiler /nologo /target:exe /platform:x64 /codepage:65001 /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll "/r:$stage\文件万能处理器.exe" "/out:$stage\EngineBackgroundChecks.exe" (Join-Path $project 'tests\EngineBackgroundChecks.cs')
+& $compiler /nologo /target:exe /platform:x64 /codepage:65001 /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Web.Extensions.dll "/r:$stage\文件万能处理器.exe" "/out:$stage\SpeechSampleChecks.exe" (Join-Path $project 'tests\SpeechSampleChecks.cs')
+if($LASTEXITCODE -ne 0){throw 'Speech sample test compile failed'}
+& (Join-Path $stage 'SpeechSampleChecks.exe') (Join-Path $run 'speech-samples')
+if($LASTEXITCODE -ne 0){throw 'Speech sample checks failed'}
+& $compiler /nologo /target:exe /platform:x64 /codepage:65001 /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll "/r:$stage\文件万能处理器.exe" "/out:$stage\EngineBackgroundChecks.exe" (Join-Path $project 'tests\EngineBackgroundChecks.cs')
 if($LASTEXITCODE -ne 0){throw 'Engine background test compile failed'}
 & (Join-Path $stage 'EngineBackgroundChecks.exe') (Join-Path $run 'engine-background')
 if($LASTEXITCODE -ne 0){throw 'Engine background checks failed'}
+& $compiler /nologo /target:exe /platform:x64 /codepage:65001 /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Web.Extensions.dll "/r:$stage\文件万能处理器.exe" "/out:$stage\EngineManagementChecks.exe" (Join-Path $project 'tests\EngineManagementChecks.cs')
+if($LASTEXITCODE -ne 0){throw 'Engine management test compile failed'}
+& (Join-Path $stage 'EngineManagementChecks.exe') (Join-Path $run 'engine-management')
+if($LASTEXITCODE -ne 0){throw 'Engine management checks failed'}
 & $python (Join-Path $project 'tests\audio_quality.py') $audioRun
 if($LASTEXITCODE -ne 0){throw 'Audio signal quality regression failed'}
 $accessRun=Join-Path $run 'access'

@@ -4,11 +4,11 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("文件万能处理器")]
-[assembly: AssemblyDescription("离线 PDF、音频与图片处理")]
+[assembly: AssemblyDescription("离线 PDF、音频、图片与视频处理")]
 [assembly: AssemblyCompany("本地工具")]
 [assembly: AssemblyProduct("文件万能处理器")]
-[assembly: AssemblyVersion("0.9.1.0")]
-[assembly: AssemblyFileVersion("0.9.1.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 namespace LocalConverter
 {
     static class Program

@@ -15,8 +15,9 @@ namespace LocalConverter
         readonly PreviewRenderer previewRenderer=new PreviewRenderer();
         readonly Settings settings=Settings.Load();
         readonly PdfAccessStore pdfAccess=new PdfAccessStore();
-        AudioWorkspace audioWorkspace;ImageWorkspace imageWorkspace;Control pdfWorkspace;ModernButton pdfSection,audioSection,imageSection;
-        readonly LinkLabel engineDownloadsLink=new LinkLabel{Dock=DockStyle.Bottom,Height=42,Text="引擎下载任务",LinkColor=Color.FromArgb(163,193,245),ActiveLinkColor=Color.White,VisitedLinkColor=Color.FromArgb(163,193,245),Visible=false,Font=new Font("Microsoft YaHei UI",9)};
+        AudioWorkspace audioWorkspace;ImageWorkspace imageWorkspace;VideoWorkspace videoWorkspace;Control pdfWorkspace;ModernButton pdfSection,audioSection,imageSection,videoSection;
+        readonly DownloadTasksButton engineDownloadsButton=new DownloadTasksButton{Dock=DockStyle.Right,Margin=Padding.Empty};
+        readonly ToolTip engineDownloadsTip=new ToolTip();
         readonly System.Windows.Forms.Timer engineDownloadsTimer=new System.Windows.Forms.Timer{Interval=400};
         readonly string[] operations={"转换","页面编辑","合并","拆分","水印","加密","移除加密","压缩"};
         readonly Dictionary<string,FunctionTab> tabs=new Dictionary<string,FunctionTab>();
@@ -55,8 +56,8 @@ namespace LocalConverter
         {
             Text="文件万能处理器 · PDF 处理";Font=new Font("Microsoft YaHei UI",10F);ForeColor=Theme.Ink;BackColor=Theme.Background;
             Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);AutoScaleMode=AutoScaleMode.None;ClientSize=new Size(1320,840);MinimumSize=new Size(1100,760);StartPosition=FormStartPosition.CenterScreen;
-            Build();using(var g=CreateGraphics())uiScale=g.DpiX/96F;if(Math.Abs(uiScale-1)>0.01)Scale(new SizeF(uiScale,uiScale));SetMode("转换");if(args.Length>0)Shown+=(s,e)=>AddFiles(args);
-            engineDownloadsLink.LinkClicked+=(s,e)=>audioWorkspace.ShowDownloads();engineDownloadsTimer.Tick+=(s,e)=>{var tasks=audioWorkspace.BackgroundDownloads.Snapshots;engineDownloadsLink.Visible=tasks.Length>0;int active=tasks.Count(t=>t.Active);engineDownloadsLink.Text=active>0?"引擎下载（"+active+"项）":tasks.Any(t=>t.State==EngineTaskState.Failed||t.State==EngineTaskState.Cancelled)?"引擎下载 · 查看任务":"引擎资源 · 已完成";};engineDownloadsTimer.Start();Disposed+=(s,e)=>engineDownloadsTimer.Dispose();
+            Build();using(var g=CreateGraphics())uiScale=g.DpiX/96F;if(Math.Abs(uiScale-1)>0.01)Scale(new SizeF(uiScale,uiScale));videoWorkspace.SetLayoutScale(uiScale);SetMode("转换");if(args.Length>0)Shown+=(s,e)=>AddFiles(args);
+            engineDownloadsButton.Click+=(s,e)=>audioWorkspace.ShowDownloads();engineDownloadsTip.SetToolTip(engineDownloadsButton,"外置引擎管理");engineDownloadsTimer.Tick+=(s,e)=>{var tasks=audioWorkspace.BackgroundDownloads.Snapshots;int active=tasks.Count(t=>t.Active);engineDownloadsButton.ActiveCount=active;engineDownloadsButton.Attention=tasks.Any(t=>t.State==EngineTaskState.Failed);string hint=active>0?"外置引擎 · "+active+" 项进行中":engineDownloadsButton.Attention?"外置引擎 · 有未完成任务":tasks.Any(t=>t.State==EngineTaskState.Paused)?"外置引擎 · 有暂停的下载":"外置引擎管理";engineDownloadsButton.AccessibleDescription=hint;engineDownloadsTip.SetToolTip(engineDownloadsButton,hint);};engineDownloadsTimer.Start();Disposed+=(s,e)=>{engineDownloadsTimer.Dispose();engineDownloadsTip.Dispose();};
             FormClosing+=ClosingForm;FormClosed+=(s,e)=>{engineDownloadsTimer.Stop();if(pagePicture.Image!=null)pagePicture.Image.Dispose();pdfAccess.Dispose();toolResults.Dispose();previewRenderer.Dispose();engine.Dispose();};
         }
         Label Label(string text,float size,Color color){return new Label{Text=text,Font=new Font(Font.FontFamily,size),ForeColor=color,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,AutoEllipsis=true};}
@@ -68,15 +69,16 @@ namespace LocalConverter
             var root=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,184));root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));Controls.Add(root);
             root.RowStyles.Add(new RowStyle(SizeType.Percent,100));
             var side=new TableLayoutPanel{Dock=DockStyle.Fill,BackColor=Color.FromArgb(24,40,67),Padding=new Padding(20,30,20,22),Margin=Padding.Empty,ColumnCount=1,RowCount=5};
-            side.RowStyles.Add(new RowStyle(SizeType.Absolute,60));side.RowStyles.Add(new RowStyle(SizeType.Absolute,35));side.RowStyles.Add(new RowStyle(SizeType.Absolute,174));side.RowStyles.Add(new RowStyle(SizeType.Percent,100));side.RowStyles.Add(new RowStyle(SizeType.Absolute,85));root.Controls.Add(side,0,0);
+            side.RowStyles.Add(new RowStyle(SizeType.Absolute,60));side.RowStyles.Add(new RowStyle(SizeType.Absolute,35));side.RowStyles.Add(new RowStyle(SizeType.Absolute,232));side.RowStyles.Add(new RowStyle(SizeType.Percent,100));side.RowStyles.Add(new RowStyle(SizeType.Absolute,85));root.Controls.Add(side,0,0);
             side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));var brand=Label("文件万能\r\n处理器",17,Color.White);brand.Name="AppBrand";brand.TextAlign=ContentAlignment.MiddleCenter;side.Controls.Add(brand,0,0);side.Controls.Add(Label("工作空间",9,Color.FromArgb(144,166,198)),0,1);
-            var navigation=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Margin=Padding.Empty};navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));side.Controls.Add(navigation,0,2);
-            pdfSection=Button("▤  PDF 处理",140,(s,e)=>SwitchWorkspace(false),true);audioSection=Button("♫  音频处理",140,(s,e)=>SwitchWorkspace(true));imageSection=Button("▧  图片处理",140,(s,e)=>ChangeWorkspace(2));
-            int sectionRow=0;foreach(var section in new[]{pdfSection,audioSection,imageSection}){navigation.RowStyles.Add(new RowStyle(SizeType.Percent,100F/3));section.Dock=DockStyle.Fill;section.Margin=new Padding(0,0,0,12);section.Appearance=ButtonAppearance.Sidebar;navigation.Controls.Add(section,0,sectionRow++);}
-            var sideInfo=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0,28,0,0)};sideInfo.Controls.Add(new Label{Text="更多文件工具\r\n将在后续版本加入",Dock=DockStyle.Top,Height=60,ForeColor=Color.FromArgb(144,166,198),Font=new Font(Font.FontFamily,9)});sideInfo.Controls.Add(engineDownloadsLink);side.Controls.Add(sideInfo,0,3);side.Controls.Add(Label("离线处理 · 文件不上传\r\nv"+typeof(MainForm).Assembly.GetName().Version.ToString(3),8.5F,Color.FromArgb(155,180,211)),0,4);
-            var workspaceHost=new Panel{Dock=DockStyle.Fill,Margin=Padding.Empty};root.Controls.Add(workspaceHost,1,0);
+            var navigation=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Margin=Padding.Empty};navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));side.Controls.Add(navigation,0,2);
+            pdfSection=Button("▤  PDF 处理",140,(s,e)=>SwitchWorkspace(false),true);audioSection=Button("♫  音频处理",140,(s,e)=>SwitchWorkspace(true));imageSection=Button("▧  图片处理",140,(s,e)=>ChangeWorkspace(2));videoSection=Button("▷  视频处理",140,(s,e)=>ChangeWorkspace(3));
+            int sectionRow=0;foreach(var section in new[]{pdfSection,audioSection,imageSection,videoSection}){navigation.RowStyles.Add(new RowStyle(SizeType.Percent,25));section.Dock=DockStyle.Fill;section.Margin=new Padding(0,0,0,12);section.Appearance=ButtonAppearance.Sidebar;navigation.Controls.Add(section,0,sectionRow++);}
+            var sideInfo=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0,28,0,0)};sideInfo.Controls.Add(new Label{Text="更多文件工具\r\n将在后续版本加入",Dock=DockStyle.Top,Height=60,ForeColor=Color.FromArgb(144,166,198),Font=new Font(Font.FontFamily,9)});side.Controls.Add(sideInfo,0,3);side.Controls.Add(Label("v"+typeof(MainForm).Assembly.GetName().Version.ToString(3),8.5F,Color.FromArgb(155,180,211)),0,4);
+            var shell=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=Padding.Empty};shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,44));shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));root.Controls.Add(shell,1,0);var globalTools=new Panel{Dock=DockStyle.Fill,Padding=new Padding(0,4,26,0),Margin=Padding.Empty};globalTools.Controls.Add(engineDownloadsButton);shell.Controls.Add(globalTools,0,0);
+            var workspaceHost=new Panel{Dock=DockStyle.Fill,Margin=Padding.Empty};shell.Controls.Add(workspaceHost,0,1);
             var main=new TableLayoutPanel{Dock=DockStyle.Fill,Margin=Padding.Empty,Padding=new Padding(26,20,26,18),ColumnCount=1,RowCount=4};workspaceHost.Controls.Add(main);pdfWorkspace=main;
-            audioWorkspace=new AudioWorkspace{Visible=false};workspaceHost.Controls.Add(audioWorkspace);imageWorkspace=new ImageWorkspace{Visible=false};workspaceHost.Controls.Add(imageWorkspace);audioWorkspace.BusyChanged+=RefreshSections;imageWorkspace.BusyChanged+=RefreshSections;
+            audioWorkspace=new AudioWorkspace{Visible=false};workspaceHost.Controls.Add(audioWorkspace);imageWorkspace=new ImageWorkspace{Visible=false};workspaceHost.Controls.Add(imageWorkspace);videoWorkspace=new VideoWorkspace(audioWorkspace.ExternalEngines,audioWorkspace.BackgroundDownloads){Visible=false};workspaceHost.Controls.Add(videoWorkspace);audioWorkspace.BusyChanged+=RefreshSections;imageWorkspace.BusyChanged+=RefreshSections;videoWorkspace.BusyChanged+=RefreshSections;
             side.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
             foreach(int h in new[]{85,55,0,150})main.RowStyles.Add(new RowStyle(h==0?SizeType.Percent:SizeType.Absolute,h==0?100:h));
             var header=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2};header.RowStyles.Add(new RowStyle(SizeType.Absolute,49));header.RowStyles.Add(new RowStyle(SizeType.Percent,100));heading=Label("PDF 处理",25,Theme.Ink);subtitle=Label("",9.5F,Theme.Muted);header.Controls.Add(heading,0,0);header.Controls.Add(subtitle,0,1);main.Controls.Add(header,0,0);
@@ -143,13 +145,13 @@ namespace LocalConverter
             BuildOptions();start.Text=ActionText;RefreshOutcome(true);SelectFile();
         }
         void SwitchWorkspace(bool audio){ChangeWorkspace(audio?1:0);}
-        void RefreshSections(){pdfSection.Enabled=audioSection.Enabled=imageSection.Enabled=running==null&&!loading&&!audioWorkspace.Busy&&!imageWorkspace.Busy;}
+        void RefreshSections(){pdfSection.Enabled=audioSection.Enabled=imageSection.Enabled=videoSection.Enabled=running==null&&!loading&&!audioWorkspace.Busy&&!imageWorkspace.Busy&&!videoWorkspace.Busy;}
         async void ChangeWorkspace(int section)
         {
-            if(running!=null||loading||audioWorkspace.Busy||imageWorkspace.Busy)return;
-            audioWorkspace.StopPlayback();if(section!=0)await StopVisuals();pdfWorkspace.Visible=section==0;audioWorkspace.Visible=section==1;imageWorkspace.Visible=section==2;
-            if(section==0){pdfWorkspace.BringToFront();SelectFile();}else if(section==1)audioWorkspace.BringToFront();else imageWorkspace.BringToFront();
-            pdfSection.Primary=section==0;audioSection.Primary=section==1;imageSection.Primary=section==2;pdfSection.Invalidate();audioSection.Invalidate();imageSection.Invalidate();Text="文件万能处理器 · "+(section==0?"PDF 处理":section==1?"音频处理":"图片处理");
+            if(running!=null||loading||audioWorkspace.Busy||imageWorkspace.Busy||videoWorkspace.Busy)return;
+            audioWorkspace.StopPlayback();if(section!=0)await StopVisuals();pdfWorkspace.Visible=section==0;audioWorkspace.Visible=section==1;imageWorkspace.Visible=section==2;videoWorkspace.Visible=section==3;
+            if(section==0){pdfWorkspace.BringToFront();SelectFile();}else if(section==1)audioWorkspace.BringToFront();else if(section==2)imageWorkspace.BringToFront();else videoWorkspace.BringToFront();
+            pdfSection.Primary=section==0;audioSection.Primary=section==1;imageSection.Primary=section==2;videoSection.Primary=section==3;pdfSection.Invalidate();audioSection.Invalidate();imageSection.Invalidate();videoSection.Invalidate();Text="文件万能处理器 · "+new[]{"PDF 处理","音频处理","图片处理","视频处理"}[section];
         }
         void Caption(string value){options.Controls.Add(new Label{Text=value,AutoSize=true,Margin=new Padding(0,8,8,4),ForeColor=Theme.Muted});}
         Label Hint(string value){if(options.Controls.Count>0)options.SetFlowBreak(options.Controls[options.Controls.Count-1],true);var h=new Label{Text=value,AutoSize=true,Tag="hint",MaximumSize=new Size(Math.Max(100,options.ClientSize.Width-25),0),ForeColor=Theme.Muted,Font=new Font(Font.FontFamily,8.5F),Margin=new Padding(0,6,0,0)};options.SetFlowBreak(h,true);options.Controls.Add(h);return h;}
@@ -171,7 +173,11 @@ namespace LocalConverter
                 options.PerformLayout();
                 int content=options.Controls.Cast<Control>().Where(c=>c.Visible).Select(c=>c.Bottom+c.Margin.Bottom-options.AutoScrollPosition.Y).DefaultIfEmpty(0).Max();
                 int cap=Math.Max((int)(145*uiScale),Math.Min((int)(340*uiScale),leftLayout.ClientSize.Height-(int)((mode=="页面编辑"?300:180)*uiScale)));
-                leftLayout.RowStyles[4].Height=Math.Max((int)(112*uiScale),Math.Min(cap,content+optionHost.Padding.Vertical+(int)(36*uiScale)));
+                int optionHeight=Math.Max((int)(112*uiScale),Math.Min(cap,content+optionHost.Padding.Vertical+(int)(36*uiScale)));
+                // Reserve a complete file card using actual laid-out toolbar height and margins.
+                // The options area scrolls when the minimum window cannot show every setting.
+                if(mode!="页面编辑"){int available=leftLayout.ClientSize.Height-leftLayout.GetRowHeights()[0]-(int)(100*uiScale)-cards.Margin.Vertical-optionHost.Margin.Vertical;optionHeight=Math.Min(optionHeight,Math.Max(0,available));}
+                leftLayout.RowStyles[4].Height=optionHeight;leftLayout.PerformLayout();
             }
             finally{layingOutOptions=false;}
         }
@@ -494,15 +500,16 @@ namespace LocalConverter
         async void ClosingForm(object sender,FormClosingEventArgs e)
         {
             if(closeReady)return;e.Cancel=true;
-            if(audioWorkspace.Busy||audioWorkspace.BackgroundDownloads.HasActive){if(MessageBox.Show(this,"取消音频任务和后台引擎下载并关闭？已下载片段会保留，之后可续传。",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await audioWorkspace.StopAsync();}
+            if(audioWorkspace.Busy||audioWorkspace.BackgroundDownloads.HasActive){if(MessageBox.Show(this,"结束音频处理并暂停后台下载后关闭？下载进度会保留；正在卸载或清理的任务将等待完成。",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await audioWorkspace.StopAsync();}
             if(imageWorkspace.Busy){if(MessageBox.Show(this,"取消图片任务并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await imageWorkspace.StopAsync();}
+            if(videoWorkspace.Busy){if(MessageBox.Show(this,"取消视频任务并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;await videoWorkspace.StopAsync();}
             if(loading){if(!closeAfterTask&&MessageBox.Show(this,"取消加载并关闭软件？",Text,MessageBoxButtons.YesNo)==DialogResult.Yes){closeAfterTask=true;loadCancel.Cancel();}return;}
             if(running!=null){if(!closeAfterTask&&MessageBox.Show(this,"取消当前任务并关闭？",Text,MessageBoxButtons.YesNo)==DialogResult.Yes){closeAfterTask=true;running.Cancel();}return;}
-            var pending=toolResults.PendingTools.Concat(audioWorkspace.PendingTools.Select(name=>"音频 / "+name)).Concat(imageWorkspace.PendingTools.Select(name=>"图片 / "+name)).ToArray();
+            var pending=toolResults.PendingTools.Concat(audioWorkspace.PendingTools.Select(name=>"音频 / "+name)).Concat(imageWorkspace.PendingTools.Select(name=>"图片 / "+name)).Concat(videoWorkspace.PendingTools.Select(name=>"视频 / "+name)).ToArray();
             if(pending.Length>0&&MessageBox.Show(this,"以下功能还有结果未下载："+String.Join("、",pending)+"。关闭会清理临时结果，确认关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes){closing=false;return;}
             if(document!=null&&document.CanUndo&&!closing&&MessageBox.Show(this,"页面修改尚在工作区，确认放弃并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
             if(imageWorkspace.HasEdits&&!closing&&MessageBox.Show(this,"图片编辑仍在工作区，确认放弃并关闭？",Text,MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
-            if(closing)return;closing=true;Enabled=false;await imageWorkspace.StopAsync();await StopVisuals();closeReady=true;BeginInvoke(new Action(Close));
+            if(closing)return;closing=true;Enabled=false;await videoWorkspace.StopAsync();await imageWorkspace.StopAsync();await StopVisuals();closeReady=true;BeginInvoke(new Action(Close));
         }
     }
 }

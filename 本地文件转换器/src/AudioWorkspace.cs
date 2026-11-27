@@ -28,7 +28,7 @@ namespace LocalConverter
         readonly Label audioSubtitle=new Label{Text="离线转换 · 支持批量 · 原件保留 · 无需上传",Dock=DockStyle.Fill,ForeColor=Theme.Muted};
         string mode="格式转换",clipFolder,sourceClip,resultClip,sampleContext="";bool ready,initializing;CancellationTokenSource cancellation;Task operation=Task.FromResult(0);SoundPlayer player;
         public bool Busy{get{return cancellation!=null||speech!=null&&speech.Busy;}}public string[] PendingTools{get{return outcomes.PendingTools.Concat(speech==null?new string[0]:speech.PendingTools).ToArray();}}public event Action BusyChanged;
-        public EngineDownloadManager BackgroundDownloads{get{return speech.Downloads;}}public void ShowDownloads(){speech.ShowDownloads();}
+        public EngineDownloadManager BackgroundDownloads{get{return speech.Downloads;}}public EngineStore ExternalEngines{get{return speech.Engines;}}public void ShowDownloads(){speech.ShowDownloads();}
         static ModernButton Button(string text,bool primary=false){return new ModernButton{Text=text,Primary=primary,Width=130,Height=38};}
         static Label Label(string text){return new Label{Text=text,AutoSize=true,Margin=new Padding(0,8,8,6),ForeColor=Theme.Muted};}
         public AudioWorkspace()

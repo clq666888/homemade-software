@@ -85,7 +85,23 @@ SpeechCatalog是下载清单的单一来源：固定CPU版本、HTTPS地址、�
 
 SpeechWorkspace独立持有资源选择、输入、生成任务、试听、结果和保存，AudioWorkspace统一四个顶部导航并汇总处理Busy/Pending。0.9.1将引擎资源移入独立EngineDownloadManager，不计入页面处理Busy，下载/校验/解压时允许任意工作区和语音资源选择切换。SemaphoreSlim限制同时2个资源，其余等待；按package.Id去重并复用音色包共用引擎，终止任务可重试，同一Store对同ID的下载/离线安装加可取消等待锁。各线程用独立序列化器写安装收据。后台异常写任务状态而非在其他页面弹模态窗，UI按版本号轮询快照，避免旧包回调覆盖当前页。
 
-EngineDownloadsForm为无模式逐项进度窗口，关闭只隐藏查看，不停下载；语音页按钮和所有工作区可见的侧栏链接均能打开。MainForm只有退出时单独检查HasActive并等待取消收尾；Manager保留包括被重试替换的未完成worker，Dispose在全部worker结束后释放令牌与信号量。不是跨进程下载服务，多个程序窗口不共享队列。引擎是否可处理仍由完整安装收据决定，不能用任务下载100%冒充安装成功。
+EngineDownloadsForm为无模式全资源管理窗口，0.11.2标题统一为“功能扩展包下载”，删除顶部冗余说明并收紧标题行。关闭不停止后台任务，所有工作区共用右上角入口；EngineResources列出7个官方资源、用途/依赖和卸载影响，并发现已登记导入音色包，不以任务历史作为资源清单。实际已下载状态取Store.Installed，不能用任务Completed冒充文件完整；没有任务但存在.part时显示已暂停，可续传或取消删除。600ms检查状态，清单变化才重建紧凑分组行并保留滚动位置；悬停感叹号显示用途，无资源也列全部官方下载项。
+
+1.0.0为用户指定的首个正式版范围，不改变后端或数据格式。管理窗取消入口统一经CancelDownload→ConfirmCancelDownload→CancelDownloadDialog，默认Accept/Cancel均为保留下载，关闭也返回Cancel；只有明确确认才排队删除片段，后端暂停/清理/退出语义不变。测试替换确认边界验证拒绝时任务继续及暂停片段保留，真实确认窗检查默认与关闭。去除截图指定冗余文字，管理窗底部整行与占位高度同步删除，侧栏保留版本。
+
+0.12.0：SpeechSampleCache保留本会话最近12段完整WAV、总16MiB LRU；Sample用更短中英固定句，缓存键含EngineStore.VersionStamp（引擎/模型目录及收据内全部文件当前长度/mtime）、Id/语速/短句。重复请求仅读缓存，首个请求仍走Generate完整校验/隔离进程；换资源版本不能命中旧音频。串行RunAction、Store.Use和取消/关闭等待保持，失败或取消不提交缓存，关闭清理。缓存命中不代表重新做SHA校验，依赖与现有Ready一致的元数据变更检测，不用于对抗刻意伪造mtime。VoicePreferences原子写本机独立JSON，列表复制SpeechVoice显示个人备注/收藏且保留真实Id；筛选无结果禁用试听。官方v1.1声线映射纠正为非连续编号，模型二进制不变。
+
+0.11.3导入入口明确区分官方原件离线安装与自定义Kokoro ZIP，EngineImportDialog在选文件前展示来源、当前精确URL/SHA或自制包规范及兼容性限制，不联网也能阅读。音色包标明v1.1推荐/v1.0可选，InstalledHint在列表直接展示任选关系及音色区别。卸载确认改OKCancel、默认Cancel，使系统关闭按钮可用且关闭不卸载。
+
+0.11.2修复每次轮询先隐藏全部按钮、再显示所需按钮造成的闪烁：ResourceRow缓存已渲染状态，无变化直接返回；有变化先计算最终显隐，只在目标状态改变时设置Visible，不能恢复隐藏再显示的重置方式。显隐缓存记录控件自身目标值，避免父容器不可见时Visible有效值误导判断。进度值、动画模式和提示仅在改变时更新，不无条件重绘按钮。EngineManagementChecks统计静止下载/卸载和连续进度更新时暂停/取消按钮VisibleChanged次数，均应为0。
+
+0.11.1布局参照[VS Code扩展管理](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace)、[Fluent列表](https://fluent2.microsoft.design/components/web/react/core/list/usage/)和[分隔层级](https://fluent2.microsoft.design/components/web/react/core/divider/usage)。分组15pt加粗大于资源10.5pt，资源行132→76逻辑像素（减少42.4%），操作与说明同行、细进度条只占左侧信息列，组间分隔线和蓝色标记形成层级。ResourceList以实际ClientSize排列子控件、AutoScrollMinSize只记录高度，避免FlowLayout虚拟宽度缓存造成缩小后横向滚动；滚动后重排仍可到达最后一项。布局尺寸使用窗口真实DPI比例，字体使用原生point，不重复缩放。专项-DpiAware验证真实150%截图/最小窗/末项可达，不用边界断言代替视觉核对。
+
+0.11.0区分Pause和Cancel：StopMode记录暂停/彻底取消，任务退出且文件流关闭后再清理，Cleanup完成才设Cancelled/归零；暂停保留.part，重启可发现。校验/解压阶段中止仍走Store.finally清临时目录，完整ZIP按暂停/取消保留或删除。退出走Pause并等待全部worker（含被重试替换的旧worker、清理及卸载），管理窗关闭不影响任务。并行下载限2、同ID去重/安装互斥照旧；不是跨进程队列服务。
+
+Store.Use按资源Id计数、可跨await释放，语音处理/试听使用引擎与模型/音色包，视频处理/取帧使用视频引擎。Uninstall在同一锁下检查使用并登记removing，阻止新的使用，配合每包安装锁。只删除runtimes/models/voice-packs下有匹配receipt的叶目录及本Id.part，拒绝未知目录、父目录、链接、只读或被其他进程锁定的文件；所有预检完成才删除。未使用的其他包可以独立卸载，不删除输入或结果；UI确认说明共享依赖影响，失败保留错误状态，不虚报成功。Store安装也拒绝覆盖正在使用的资源。
+
+SpeechWorkspace目录监听/去抖及低频检查保持，删除资源自动更新可用状态，保留输入/光标/选择；运行前散列验证照旧。普通总测试增加EngineManagementChecks；专项脚本可显式开启官方小引擎HTTPS暂停/续传/取消/卸载检查，安装与删除均在.work隔离目录。
 
 语音工具结果隔离，结果保存仍使用DownloadJob原子保存与进度。TXT正文校对和原始SRT分开，SRT显示实际时间码、TXT改动标未保存。TTS可选WAV/MP3/FLAC，试听短句不覆盖正式结果；引擎/音色缺失或数据变化则禁用。音色导入只允许配套Kokoro数据及受限voice-pack.json，不执行包内程序；规范见[VOICE_PACKS](VOICE_PACKS.md)。新模型家族需实现适配器，不把录音当音色包。
 
@@ -126,3 +142,13 @@ tests/AudioChecks.cs 覆盖10种输出往返、元数据、取消、原件保护
 官方资料：[pypdf 页面合并/表单](https://pypdf.readthedocs.io/en/stable/user/merging-pdfs.html)、[压缩](https://pypdf.readthedocs.io/en/stable/user/file-size.html)、[AES](https://pypdf.readthedocs.io/en/stable/user/encryption-decryption.html)、[PDFium 线程与释放](https://pypdfium2.readthedocs.io/en/stable/python_api.html)、[MS-DOC 正文算法](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/01d5d8c4-cf9c-4ef9-80fd-439e763cfe01)。
 
 0.3.2 的导航/操作分层参考 [PDFgear 官方用户指南的界面示例](https://www.pdfgear.com/windows-user-guide/navigate-pdf.htm)，只借鉴结构，未复制品牌素材或代码。MainForm.RefreshCommands 集中约束空队列排序、图片旋转和页面选择操作的可用性。
+
+## 视频外置引擎与工作区（0.10.0）
+
+MainForm增加第四项VideoWorkspace，共用AudioWorkspace的EngineStore/EngineDownloadManager及右上角任务窗。VideoCatalog固定上游版本/ZIP大小/散列；Store校验安装并保留全部DLL与许可证，额外检查ffmpeg/ffprobe/avcodec存在。引擎不在dist，发布不清外置目录；没有资源时UI完整、添加与处理禁用。750ms轻量轮询收据元数据，下载成功或离线导入后自动启用。
+
+VideoEngine独立ProcessJob执行ffprobe/ffmpeg，UTF8读取、参数逐项引用、关闭stdin、禁止控制台；白名单限制本地file/pipe及常见容器，网络播放列表不可读取。Inspect读取时长/宽高/旋转/音频及文件版本；Frame输出有界PNG，时间条180ms去抖，取消旧任务、串行取帧、版本号丢弃迟到帧，不锁原视频。所有C#控件参数先快照，后台不读取控件。
+
+转码明确首视频/首音轨、无字幕、双声道，六种容器按固定编码器配置输出；默认重编码非改后缀。GIF先生成调色板，再应用paletteuse编码，不整段缓存图像；时间范围<=120秒、最长边1280、<=30fps，所有输入先验证，过程中检查源文件未变。palette/半成品为.tmp，成功原子重命名、finally清理。短GIF预览最多3秒，源/结果图像使用内存流保持动画但不锁磁盘；预览文件独立临时目录。ToolResultStore按视频/GIF隔离，Context不含另一功能参数。保存仍走DownloadJob原子保存和进度反馈；关闭先停止处理/取帧再释放图片和临时结果。
+
+`scripts/test-video.ps1`仅显式-DownloadFixture时下载固定测试包到.work，真实覆盖六格式/声音/旋转/范围/动画/取消/原件/结果隔离和最小窗。大型引擎测试为可选专项，总测试不隐式联网。

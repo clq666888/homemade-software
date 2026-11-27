@@ -126,7 +126,7 @@ namespace LocalConverter
                 if(height<110){Theme.Text(g,"＋  添加文件或拖入此处",Font,Theme.Ink,new RectangleF(10,0,w,height),StringAlignment.Center);return;}
                 using(var large=new Font(Font.FontFamily,30))Theme.Text(g,"＋",large,Theme.Blue,new RectangleF(10,top,w,60),StringAlignment.Center);
                 Theme.Text(g,"拖入文件，或点击这里添加",Font,Theme.Ink,new RectangleF(10,top+61,w,36),StringAlignment.Center);
-                if(height>155)using(var small=new Font(Font.FontFamily,9))Theme.Text(g,"所有处理都在本机完成",small,Theme.Muted,new RectangleF(10,top+100,w,28),StringAlignment.Center);return;
+                return;
             }
             for(int i=0;i<Items.Count;i++)
             {
